@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <title>earth</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+
+      #info {
+        color: #fff;
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 100;
+        display: block;
+      }
+
+      #distance {
+        color: #0f0;
+        position: absolute;
+        top: 40px;
+        left: 10px;
+        z-index: 100;
+        display: block;
+      }
+
+      #contextMenu {
+        display: none;
+        position: absolute;
+        background: #222;
+        color: white;
+        border: 1px solid #555;
+        padding: 5px;
+        z-index: 1000;
+      }
+
+      #contextMenu div {
+        padding: 5px;
+        cursor: pointer;
+      }
+
+      #contextMenu div:hover {
+        background: #444;
+      }
+
+      #distanceEndButton {
+        display: none;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: #f00;
+        color: #fff;
+        padding: 8px;
+        cursor: pointer;
+        z-index: 1000;
+      }
+      #selectedNames {
+        color: #0ff;
+        position: absolute;
+        top: 70px;
+        left: 10px;
+        z-index: 100;
+        display: block;
+      }
+    </style>
+  </head>
+
+  <body>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+          "three/addons/controls/OrbitControls": "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js",
+          "three/addons/misc/Timer": "https://unpkg.com/three@0.161.0/examples/jsm/misc/Timer.js"
+        }
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.js"></script>
+    <div id="info"></div>
+    <div id="distance"></div>
+    <div id="selectedNames"></div>
+    <div id="contextMenu">
+      <div id="measureDistance">2衛星間距離測定</div>
+      <div id="orbitPredict">衛星軌道予測</div>
+    </div>
+    <div id="distanceEndButton">2衛星間距離測定終了</div>
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls";
+      import { Timer } from "three/addons/misc/Timer";
+
+      let selectedForMeasure = null;
+      let measuringMode = false;
+      let selectedSecond = null;
+      let line = null;
+
+      const earthRadius = 6378.137;
+      const eartSegments = 72;
+      const maxDistance = earthRadius * 100,
+        minDistance = earthRadius * 1.5,
+        defaultDistance = earthRadius * 5;
+
+      const timer = new Timer();
+      const date = new Date();
+      let gmst = satellite.gstime(date);
+
+      const scene = new THREE.Scene();
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        1,
+        maxDistance
+      );
+      camera.position.set(defaultDistance, 0, 0);
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.maxDistance = maxDistance;
+      controls.minDistance = minDistance;
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      scene.add(directionalLight);
+      function updateDirectionalLight() {
+        const position = satellite.eciToEcf(sunDirection(date), gmst);
+        directionalLight.position.copy(
+          new THREE.Vector3(position.x, position.z, -position.y).normalize()
+        );
+      }
+
+      function sunDirection(date) {
+        const T = (satellite.jday(date) - 2451545.0) / 36525;
+        const L = 280.46 + 36000.77005361 * T;
+        const gRad = THREE.MathUtils.degToRad(357.528 + 35999.05034 * T);
+        const lambdaRad = THREE.MathUtils.degToRad(
+          L + 1.914666471 * Math.sin(gRad) + 0.019994643 * Math.sin(2 * gRad)
+        );
+        const epsilonRad = THREE.MathUtils.degToRad(23.439291 - 0.0130042 * T);
+        return {
+          x: Math.cos(lambdaRad),
+          y: Math.cos(epsilonRad) * Math.sin(lambdaRad),
+          z: Math.sin(epsilonRad) * Math.sin(lambdaRad),
+        };
+      }
+
+      updateDirectionalLight();
+      scene.add(new THREE.AmbientLight(0xffffff, 0.1));
+
+      const earth = new THREE.Mesh(
+        new THREE.SphereGeometry(earthRadius, eartSegments, eartSegments / 2),
+        new THREE.MeshLambertMaterial({
+          map: new THREE.TextureLoader().load("earth_map.png"),
+        })
+      );
+      scene.add(earth);
+
+      function updateSatellite(object) {
+        const positionAndVelocity = satellite.propagate(
+          object.userData.record,
+          date
+        );
+        if (!object.visible) return;
+        if (!object.userData.record.error) {
+          const position = satellite.eciToEcf(
+            positionAndVelocity.position,
+            gmst
+          );
+          object.position.set(position.x, position.z, -position.y);
+          const geo = satellite.eciToGeodetic(
+            positionAndVelocity.position,
+            gmst
+          );
+          object.rotation.set(0, geo.longitude, geo.latitude);
+        } else {
+          console.log(object.userData.record);
+          object.visible = false;
+        }
+      }
+
+      const starlink = new THREE.Group();
+      async function loadSatellites() {
+        const response = await fetch("starlink.txt");
+        const data = await response.text();
+        const lines = data.split(/\s*\n/);
+        const count = Math.floor(lines.length / 3);
+        const geometry = new THREE.BoxGeometry(30, 30, 30);
+        for (let i = 0; i < count; i++) {
+          const object = new THREE.Mesh(
+            geometry,
+            new THREE.MeshLambertMaterial({ color: 0xffffff })
+          );
+          object.name = lines[i * 3];
+          object.userData.record = satellite.twoline2satrec(
+            lines[i * 3 + 1],
+            lines[i * 3 + 2]
+          );
+          updateSatellite(object);
+          starlink.add(object);
+        }
+        scene.add(starlink);
+      }
+      loadSatellites();
+
+      const pointer = new THREE.Vector2();
+      const raycaster = new THREE.Raycaster();
+      let intersected = null;
+      const info = document.getElementById("info");
+      const distanceInfo = document.getElementById("distance");
+      const contextMenu = document.getElementById("contextMenu");
+      const distanceEndButton = document.getElementById("distanceEndButton");
+      const selectedNames = document.getElementById("selectedNames");
+
+      animate();
+      function animate() {
+        requestAnimationFrame(animate);
+        timer.update();
+        const delta = Math.floor(timer.getDelta() * 1000);
+        date.setMilliseconds(date.getMilliseconds() + delta);
+        gmst = satellite.gstime(date);
+        updateDirectionalLight();
+        updateStarlink();
+        controls.update();
+
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(starlink.children, false);
+        if (intersects.length > 0) {
+          if (intersects[0].object != intersected) {
+            if (intersected) intersected.material.emissive.setHex(0xffffff);
+            intersected = intersects[0].object;
+            info.innerText = intersected.name;
+            intersected.material.emissive.setHex(0xff0000);
+          }
+        }
+
+        //  衛星の位置に応じて線の頂点を更新
+        if (selectedForMeasure && selectedSecond && line) {
+          const positions = line.geometry.attributes.position.array;
+          positions[0] = selectedForMeasure.position.x;
+          positions[1] = selectedForMeasure.position.y;
+          positions[2] = selectedForMeasure.position.z;
+          positions[3] = selectedSecond.position.x;
+          positions[4] = selectedSecond.position.y;
+          positions[5] = selectedSecond.position.z;
+          line.geometry.attributes.position.needsUpdate = true;
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      function updateStarlink() {
+        for (const object of starlink.children) {
+          updateSatellite(object);
+        }
+      }
+
+      window.addEventListener("resize", () => {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      });
+
+      document.addEventListener("mousemove", (event) => {
+        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      });
+
+      document.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(starlink.children, false);
+
+        if (intersects.length > 0) {
+          const clicked = intersects[0].object;
+          clicked.userData._rightClick = true;
+          contextMenu.style.top = event.clientY + "px";
+          contextMenu.style.left = event.clientX + "px";
+          contextMenu.style.display = "block";
+        } else {
+          contextMenu.style.display = "none";
+        }
+      });
+
+      document
+        .getElementById("measureDistance")
+        .addEventListener("click", () => {
+          const target = starlink.children.find(
+            (obj) => obj.userData._rightClick
+          );
+          if (target) {
+            selectedForMeasure = target;
+            selectedForMeasure.material.emissive.setHex(0x00ff00);
+            measuringMode = true;
+            distanceEndButton.style.display = "block";
+          }
+          contextMenu.style.display = "none";
+          for (const obj of starlink.children) obj.userData._rightClick = false;
+        });
+
+      document
+        .getElementById("distanceEndButton")
+        .addEventListener("click", () => {
+          distanceInfo.innerText = "";
+          if (selectedForMeasure)
+            selectedForMeasure.material.emissive.setHex(0xffffff);
+          if (selectedSecond) selectedSecond.material.emissive.setHex(0xffffff);
+          if (line) {
+            scene.remove(line);
+            line.geometry.dispose();
+            line.material.dispose();
+            line = null;
+          }
+          selectedForMeasure = null;
+          selectedSecond = null;
+          measuringMode = false;
+          distanceEndButton.style.display = "none";
+        });
+
+      document.addEventListener("click", (event) => {
+        if (!measuringMode) return;
+
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(starlink.children, false);
+        if (intersects.length > 0) {
+          const second = intersects[0].object;
+          if (second === selectedForMeasure) return;
+
+          selectedSecond = second;
+          second.material.emissive.setHex(0x00ff00);
+
+          const distance = selectedForMeasure.position.distanceTo(
+            second.position
+          );
+          distanceInfo.innerText = `距離: ${distance.toFixed(2)} km`;
+
+          // ✅ 選択された名前を表示
+          selectedNames.innerText = `選択: ${selectedForMeasure.name} → ${selectedSecond.name}`;
+
+          const geometry = new THREE.BufferGeometry().setFromPoints([
+            selectedForMeasure.position.clone(),
+            second.position.clone(),
+          ]);
+          const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+          line = new THREE.Line(geometry, material);
+          scene.add(line);
+
+          measuringMode = false;
+        }
+      });
+    </script>
+  </body>
+</html>
