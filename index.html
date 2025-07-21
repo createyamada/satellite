@@ -1,34 +1,44 @@
 <!DOCTYPE html>
 <html lang="ja">
   <head>
-    <title>earth</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="./style.css" />
+    <title>Cesium Earth</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+    <link
+      href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
     <style>
-      body {
+      html,
+      body,
+      #cesiumContainer {
+        width: 100%;
+        height: 100%;
         margin: 0;
+        padding: 0;
         overflow: hidden;
       }
-
+      #info,
+      #distance,
+      #selectedNames {
+        color: white;
+        position: absolute;
+        left: 10px;
+        z-index: 100;
+      }
       #info {
-        color: #fff;
-        position: absolute;
         top: 10px;
-        left: 10px;
-        z-index: 100;
-        display: block;
       }
-
       #distance {
-        color: #0f0;
-        position: absolute;
         top: 40px;
-        left: 10px;
-        z-index: 100;
-        display: block;
+        color: #0f0;
       }
-
+      #selectedNames {
+        top: 70px;
+        color: #0ff;
+      }
       #contextMenu {
         display: none;
         position: absolute;
@@ -38,16 +48,13 @@
         padding: 5px;
         z-index: 1000;
       }
-
       #contextMenu div {
         padding: 5px;
         cursor: pointer;
       }
-
       #contextMenu div:hover {
         background: #444;
       }
-
       #distanceEndButton {
         display: none;
         position: absolute;
@@ -59,305 +66,519 @@
         cursor: pointer;
         z-index: 1000;
       }
-      #selectedNames {
-        color: #0ff;
-        position: absolute;
-        top: 70px;
-        left: 10px;
-        z-index: 100;
-        display: block;
+      #timeModal {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #222;
+        color: white;
+        padding: 20px;
+        border: 1px solid #888;
+        z-index: 1000;
+      }
+
+      #launchModal {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #222;
+        color: white;
+        padding: 20px;
+        border: 1px solid #888;
+        z-index: 1000;
       }
     </style>
   </head>
-
   <body>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
-          "three/addons/controls/OrbitControls": "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js",
-          "three/addons/misc/Timer": "https://unpkg.com/three@0.161.0/examples/jsm/misc/Timer.js"
-        }
-      }
-    </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.js"></script>
+    <div id="cesiumContainer"></div>
     <div id="info"></div>
     <div id="distance"></div>
     <div id="selectedNames"></div>
     <div id="contextMenu">
       <div id="measureDistance">2衛星間距離測定</div>
       <div id="orbitPredict">衛星軌道予測</div>
+      <div id="satelliteLaunch">現在地点から衛星発射</div>
     </div>
     <div id="distanceEndButton">2衛星間距離測定終了</div>
-    <script type="module">
-      import * as THREE from "three";
-      import { OrbitControls } from "three/addons/controls/OrbitControls";
-      import { Timer } from "three/addons/misc/Timer";
 
-      let selectedForMeasure = null;
-      let measuringMode = false;
-      let selectedSecond = null;
-      let line = null;
+    <div id="timeModal">
+      <h3>予測時間を入力</h3>
+      <label
+        >日:
+        <input
+          id="daysInput"
+          type="number"
+          value="0"
+          min="0"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >時:
+        <input
+          id="hoursInput"
+          type="number"
+          value="0"
+          min="0"
+          max="23"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >分:
+        <input
+          id="minutesInput"
+          type="number"
+          value="0"
+          min="0"
+          max="59"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >秒:
+        <input
+          id="secondsInput"
+          type="number"
+          value="0"
+          min="0"
+          max="59"
+          style="width: 60px" /></label
+      ><br /><br />
+      <button onclick="applyTime()">OK</button>
+      <button onclick="closeTimeModal()">キャンセル</button>
+    </div>
 
-      const earthRadius = 6378.137;
-      const eartSegments = 72;
-      const maxDistance = earthRadius * 100,
-        minDistance = earthRadius * 1.5,
-        defaultDistance = earthRadius * 5;
+    <div id="launchModal">
+      <h3>予測時間を入力</h3>
+      <label
+        >高度（km）:
+        <input
+          id="altitudeInput"
+          type="number"
+          value="0"
+          min="0"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >発射角度:
+        <input
+          id="angleInput"
+          type="number"
+          value="0"
+          min="0"
+          max="360"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >初速度（秒速）:
+        <input
+          id="velocityInput"
+          type="number"
+          value="0"
+          min="0"
+          style="width: 60px" /></label
+      ><br />
+      <label
+        >予測秒数:
+        <input
+          id="predictSecondInput"
+          type="number"
+          value="0"
+          min="0"
+          style="width: 60px" /></label
+      ><br /><br />
+      <button onclick="exeLaunch()">計算開始</button>
+      <button onclick="closeLaunchModal()">キャンセル</button>
+    </div>
+    <canvas id="orbit2DCanvas"
+        width="300"
+        height="300"
+        style="position: absolute; bottom: 10px; right: 10px; border: 1px solid #ccc; background: white;">
+</canvas>
+    <script>
+      const CesiumAccessToken = process.env.CESIUM_ACCESS_TOKEN
+      const exeURL = process.env.EXE_URL
 
-      const timer = new Timer();
+      Cesium.Ion.defaultAccessToken = CesiumAccessToken
+      const viewer = new Cesium.Viewer("cesiumContainer", {
+        shouldAnimate: true,
+        selectionIndicator: false,
+        infoBox: false,
+      });
+
+      // 太陽を表示
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.sun.show = true;
+      // 月を表示
+      viewer.scene.moon.show = true;
+      let minutesAhead;
       const date = new Date();
-      let gmst = satellite.gstime(date);
+      let rightClickPosition = null;
+      const starlink = [];
 
-      const scene = new THREE.Scene();
-      const renderer = new THREE.WebGLRenderer();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+      let orbitEntity = null;
+      let selectedForMeasure = null,
+        selectedSecond = null,
+        measuringMode = false,
+        lineEntity = null;
 
-      const camera = new THREE.PerspectiveCamera(
-        45,
-        window.innerWidth / window.innerHeight,
-        1,
-        maxDistance
-      );
-      camera.position.set(defaultDistance, 0, 0);
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.maxDistance = maxDistance;
-      controls.minDistance = minDistance;
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      scene.add(directionalLight);
-      function updateDirectionalLight() {
-        const position = satellite.eciToEcf(sunDirection(date), gmst);
-        directionalLight.position.copy(
-          new THREE.Vector3(position.x, position.z, -position.y).normalize()
-        );
-      }
 
-      function sunDirection(date) {
-        const T = (satellite.jday(date) - 2451545.0) / 36525;
-        const L = 280.46 + 36000.77005361 * T;
-        const gRad = THREE.MathUtils.degToRad(357.528 + 35999.05034 * T);
-        const lambdaRad = THREE.MathUtils.degToRad(
-          L + 1.914666471 * Math.sin(gRad) + 0.019994643 * Math.sin(2 * gRad)
-        );
-        const epsilonRad = THREE.MathUtils.degToRad(23.439291 - 0.0130042 * T);
-        return {
-          x: Math.cos(lambdaRad),
-          y: Math.cos(epsilonRad) * Math.sin(lambdaRad),
-          z: Math.sin(epsilonRad) * Math.sin(lambdaRad),
-        };
-      }
-
-      updateDirectionalLight();
-      scene.add(new THREE.AmbientLight(0xffffff, 0.1));
-
-      const earth = new THREE.Mesh(
-        new THREE.SphereGeometry(earthRadius, eartSegments, eartSegments / 2),
-        new THREE.MeshLambertMaterial({
-          map: new THREE.TextureLoader().load("earth_map.png"),
-        })
-      );
-      scene.add(earth);
-
-      function updateSatellite(object) {
-        const positionAndVelocity = satellite.propagate(
-          object.userData.record,
-          date
-        );
-        if (!object.visible) return;
-        if (!object.userData.record.error) {
-          const position = satellite.eciToEcf(
-            positionAndVelocity.position,
-            gmst
-          );
-          object.position.set(position.x, position.z, -position.y);
-          const geo = satellite.eciToGeodetic(
-            positionAndVelocity.position,
-            gmst
-          );
-          object.rotation.set(0, geo.longitude, geo.latitude);
-        } else {
-          console.log(object.userData.record);
-          object.visible = false;
-        }
-      }
-
-      const starlink = new THREE.Group();
       async function loadSatellites() {
         const response = await fetch("starlink.txt");
         const data = await response.text();
         const lines = data.split(/\s*\n/);
         const count = Math.floor(lines.length / 3);
-        const geometry = new THREE.BoxGeometry(30, 30, 30);
         for (let i = 0; i < count; i++) {
-          const object = new THREE.Mesh(
-            geometry,
-            new THREE.MeshLambertMaterial({ color: 0xffffff })
-          );
-          object.name = lines[i * 3];
-          object.userData.record = satellite.twoline2satrec(
+          const name = lines[i * 3];
+          const rec = satellite.twoline2satrec(
             lines[i * 3 + 1],
             lines[i * 3 + 2]
           );
-          updateSatellite(object);
-          starlink.add(object);
+          const sat = { name, record: rec, entity: null };
+          const pos = computePos(rec, new Date());
+          sat.entity = viewer.entities.add({
+            name,
+            position: pos,
+            point: { pixelSize: 8, color: Cesium.Color.WHITE },
+            label: {
+              text: name,
+              font: "12px sans-serif",
+              pixelOffset: new Cesium.Cartesian2(10, -10),
+              showBackground: true,
+              show: false,
+            },
+          });
+          starlink.push(sat);
         }
-        scene.add(starlink);
       }
+
+      function computePos(record, date) {
+        const gmst = satellite.gstime(date);
+        const p = satellite.propagate(record, date).position;
+        if (!p) return Cesium.Cartesian3.ZERO;
+        const geo = satellite.eciToGeodetic(p, gmst);
+        return Cesium.Cartesian3.fromRadians(
+          geo.longitude,
+          geo.latitude,
+          geo.height * 1000
+        );
+      }
+
+      function updateSatellites() {
+        const now = new Date();
+        starlink.forEach((s) => {
+          const pos = computePos(s.record, now);
+          s.entity.position = pos;
+        });
+        if (selectedForMeasure && selectedSecond && lineEntity) {
+          lineEntity.polyline.positions = [
+            selectedForMeasure.entity.position.getValue(now),
+            selectedSecond.entity.position.getValue(now),
+          ];
+        }
+      }
+
       loadSatellites();
+      setInterval(updateSatellites, 1000);
 
-      const pointer = new THREE.Vector2();
-      const raycaster = new THREE.Raycaster();
-      let intersected = null;
-      const info = document.getElementById("info");
-      const distanceInfo = document.getElementById("distance");
-      const contextMenu = document.getElementById("contextMenu");
-      const distanceEndButton = document.getElementById("distanceEndButton");
-      const selectedNames = document.getElementById("selectedNames");
-
-      animate();
-      function animate() {
-        requestAnimationFrame(animate);
-        timer.update();
-        const delta = Math.floor(timer.getDelta() * 1000);
-        date.setMilliseconds(date.getMilliseconds() + delta);
-        gmst = satellite.gstime(date);
-        updateDirectionalLight();
-        updateStarlink();
-        controls.update();
-
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObjects(starlink.children, false);
-        if (intersects.length > 0) {
-          if (intersects[0].object != intersected) {
-            if (intersected) intersected.material.emissive.setHex(0xffffff);
-            intersected = intersects[0].object;
-            info.innerText = intersected.name;
-            intersected.material.emissive.setHex(0xff0000);
-          }
+      const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+      let pickedObject;
+      handler.setInputAction((movement) => {
+        const picked = viewer.scene.pick(movement.endPosition);
+        if (picked && picked.id) {
+          pickedObject = picked.id;
+          document.getElementById("info").innerText = pickedObject.name;
         }
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
-        //  衛星の位置に応じて線の頂点を更新
-        if (selectedForMeasure && selectedSecond && line) {
-          const positions = line.geometry.attributes.position.array;
-          positions[0] = selectedForMeasure.position.x;
-          positions[1] = selectedForMeasure.position.y;
-          positions[2] = selectedForMeasure.position.z;
-          positions[3] = selectedSecond.position.x;
-          positions[4] = selectedSecond.position.y;
-          positions[5] = selectedSecond.position.z;
-          line.geometry.attributes.position.needsUpdate = true;
+      handler.setInputAction((click) => {
+        if (!measuringMode) return;
+        const picked = viewer.scene.pick(click.position);
+        if (picked && picked.id && picked.id !== selectedForMeasure?.entity) {
+          selectedSecond = starlink.find((s) => s.entity === picked.id);
+          const pos1 = selectedForMeasure.entity.position.getValue(new Date());
+          const pos2 = selectedSecond.entity.position.getValue(new Date());
+          const dist = Cesium.Cartesian3.distance(pos1, pos2) / 1000;
+          document.getElementById("distance").innerText = `距離: ${dist.toFixed(
+            2
+          )} km`;
+          document.getElementById(
+            "selectedNames"
+          ).innerText = `選択: ${selectedForMeasure.name} → ${selectedSecond.name}`;
+          lineEntity = viewer.entities.add({
+            polyline: {
+              positions: [pos1, pos2],
+              width: 2,
+              material: Cesium.Color.LIME,
+            },
+          });
+          measuringMode = false;
         }
-
-        renderer.render(scene, camera);
-      }
-
-      function updateStarlink() {
-        for (const object of starlink.children) {
-          updateSatellite(object);
-        }
-      }
-
-      window.addEventListener("resize", () => {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(width, height);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-      });
-
-      document.addEventListener("mousemove", (event) => {
-        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      });
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
       document.addEventListener("contextmenu", (event) => {
         event.preventDefault();
-        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-        pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        const picked = viewer.scene.pick(
+          new Cesium.Cartesian2(event.clientX, event.clientY)
+        );
+        if (picked && picked.id) {
+          starlink.forEach((s) => (s._rightClick = false));
+          const target = starlink.find((s) => s.entity === picked.id);
+          if (target) {
+            target._rightClick = true;
+            const menu = document.getElementById("contextMenu");
 
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObjects(starlink.children, false);
-
-        if (intersects.length > 0) {
-          const clicked = intersects[0].object;
-          clicked.userData._rightClick = true;
-          contextMenu.style.top = event.clientY + "px";
-          contextMenu.style.left = event.clientX + "px";
-          contextMenu.style.display = "block";
+            menu.style.left = event.clientX + "px";
+            menu.style.top = event.clientY + "px";
+            menu.style.display = "block";
+          }
         } else {
-          contextMenu.style.display = "none";
+          const menu = document.getElementById("contextMenu");
+          
+
+          const windowX = event.clientX;
+          const windowY = event.clientY;
+
+          const canvasX = event.clientX;
+          const canvasY = event.clientY;
+
+          const cartesian = viewer.scene.camera.pickEllipsoid(
+            new Cesium.Cartesian2(canvasX, canvasY),
+            viewer.scene.globe.ellipsoid
+          );
+
+          if (!cartesian) return;
+
+          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+          const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+          const height = cartographic.height;
+
+          rightClickPosition = { longitude, latitude };
+
+          // メニューを表示
+          contextMenu.style.left = windowX + "px";
+          contextMenu.style.top = windowY + "px";
+          contextMenu.style.display = "block";
         }
       });
 
       document
         .getElementById("measureDistance")
         .addEventListener("click", () => {
-          const target = starlink.children.find(
-            (obj) => obj.userData._rightClick
-          );
+          const target = starlink.find((s) => s._rightClick);
           if (target) {
             selectedForMeasure = target;
-            selectedForMeasure.material.emissive.setHex(0x00ff00);
             measuringMode = true;
-            distanceEndButton.style.display = "block";
+            document.getElementById("distanceEndButton").style.display =
+              "block";
           }
-          contextMenu.style.display = "none";
-          for (const obj of starlink.children) obj.userData._rightClick = false;
+          document.getElementById("contextMenu").style.display = "none";
         });
 
       document
         .getElementById("distanceEndButton")
         .addEventListener("click", () => {
-          distanceInfo.innerText = "";
-          if (selectedForMeasure)
-            selectedForMeasure.material.emissive.setHex(0xffffff);
-          if (selectedSecond) selectedSecond.material.emissive.setHex(0xffffff);
-          if (line) {
-            scene.remove(line);
-            line.geometry.dispose();
-            line.material.dispose();
-            line = null;
-          }
+          document.getElementById("distance").innerText = "";
+          document.getElementById("selectedNames").innerText = "";
           selectedForMeasure = null;
           selectedSecond = null;
           measuringMode = false;
-          distanceEndButton.style.display = "none";
+          document.getElementById("distanceEndButton").style.display = "none";
+          if (lineEntity) viewer.entities.remove(lineEntity);
         });
 
-      document.addEventListener("click", (event) => {
-        if (!measuringMode) return;
-
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObjects(starlink.children, false);
-        if (intersects.length > 0) {
-          const second = intersects[0].object;
-          if (second === selectedForMeasure) return;
-
-          selectedSecond = second;
-          second.material.emissive.setHex(0x00ff00);
-
-          const distance = selectedForMeasure.position.distanceTo(
-            second.position
-          );
-          distanceInfo.innerText = `距離: ${distance.toFixed(2)} km`;
-
-          // ✅ 選択された名前を表示
-          selectedNames.innerText = `選択: ${selectedForMeasure.name} → ${selectedSecond.name}`;
-
-          const geometry = new THREE.BufferGeometry().setFromPoints([
-            selectedForMeasure.position.clone(),
-            second.position.clone(),
-          ]);
-          const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-          line = new THREE.Line(geometry, material);
-          scene.add(line);
-
-          measuringMode = false;
-        }
+      document.getElementById("orbitPredict").addEventListener("click", () => {
+        document.getElementById("timeModal").style.display = "block";
       });
+
+      document
+        .getElementById("satelliteLaunch")
+        .addEventListener("click", () => {
+          document.getElementById("launchModal").style.display = "block";
+        });
+
+      function openTimeModal() {
+        document.getElementById("timeModal").style.display = "block";
+      }
+
+      function closeTimeModal() {
+        document.getElementById("timeModal").style.display = "none";
+      }
+
+      function openLaunchModal() {
+        document.getElementById("launchModal").style.display = "block";
+      }
+
+      function closeLaunchModal() {
+        document.getElementById("launchModal").style.display = "none";
+      }
+
+      function applyTime() {
+        const days = parseInt(document.getElementById("daysInput").value) || 0;
+        const hours =
+          parseInt(document.getElementById("hoursInput").value) || 0;
+        const minutes =
+          parseInt(document.getElementById("minutesInput").value) || 0;
+        const seconds =
+          parseInt(document.getElementById("secondsInput").value) || 0;
+
+        minutesAhead = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+
+        console.log("合計秒数:", minutesAhead);
+
+        const target = starlink.find((s) => s._rightClick);
+        document.getElementById("contextMenu").style.display = "none";
+        if (!target) return;
+
+        if (orbitEntity) {
+          viewer.entities.remove(orbitEntity);
+          orbitEntity = null;
+        }
+
+        const positions = [];
+        const start = new Date();
+        const step = 60;
+
+        for (let i = 0; i <= minutesAhead * 60; i += step) {
+          const future = new Date(start.getTime() + i * 1000);
+          const pos = computePos(target.record, future);
+          positions.push(pos);
+        }
+
+        orbitEntity = viewer.entities.add({
+          polyline: {
+            positions,
+            width: 2,
+            material: Cesium.Color.ORANGE.withAlpha(0.7),
+          },
+        });
+
+        closeTimeModal();
+      }
+
+      function exeLaunch() {
+        console.log("exeLaunch実行")
+
+        // const altitude =
+        //   parseInt(document.getElementById("altitudeInput").value) || 0;
+        // const angle =
+        //   parseInt(document.getElementById("angleInput").value) || 0;
+        // const velocity =
+        //   parseInt(document.getElementById("velocityInput").value) || 0;
+        // const predictSecond =
+        //   parseInt(document.getElementById("predictSecondInput").value) || 0;
+
+        // TODO:delete LEO
+        // const altitude = 500000
+        // const angle = 0
+        // const velocity = 7800
+        // TODO:delete LEO
+
+        // TODO:delete GEO
+        const altitude = 35786000
+        const angle = 0
+        const velocity = 3070
+        // TODO:delete GEO
+
+
+        
+
+        console.log("実行可能確認")
+
+        // console.log(rightClickPosition)
+
+        if (!rightClickPosition) return;
+        console.log("実行可能")
+        // console.log(rightClickPosition)
+
+        // 軌道計算APIに送るリクエスト（例）
+        const requestData = {
+          ...rightClickPosition,
+          altitude: altitude, // 高度[m]
+          angle: angle, // 仰角[度]
+          velocity: velocity, // 初速度[m/s]
+          steps: 50000, // 計算ステップ数
+        };
+
+        // APIリクエストを送信し、描画処理を行う
+        fetch(exeURL + "/api/calc_satellite/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status === "success") {
+              const ecefPositions = data.trajectory_ecef;
+              console.log(ecefPositions)
+
+              const cartesianPositions = ecefPositions.map((coord) =>
+                Cesium.Cartesian3.fromElements(coord[0], coord[1], coord[2])
+              ).filter((p) => Cesium.defined(p));
+
+              viewer.entities.add({
+                name: "Satellite Orbit",
+                polyline: {
+                  positions: cartesianPositions,
+                  width: 2,
+                  material: Cesium.Color.YELLOW,
+                  arcType: Cesium.ArcType.NONE
+                },
+              });
+
+              // --- ▼ 2D描画処理 ▼ ---
+              const canvas = document.getElementById("orbit2DCanvas");
+              const ctx = canvas.getContext("2d");
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+              // X-Z平面の最大値・最小値を取得してスケーリング
+              const xs = ecefPositions.map(p => p[0]);
+              const zs = ecefPositions.map(p => p[2]);
+
+              const minX = Math.min(...xs);
+              const maxX = Math.max(...xs);
+              const minZ = Math.min(...zs);
+              const maxZ = Math.max(...zs);
+
+              const padding = 20;
+              const scaleX = (canvas.width - padding * 2) / (maxX - minX);
+              const scaleZ = (canvas.height - padding * 2) / (maxZ - minZ);
+
+              ctx.beginPath();
+              ecefPositions.forEach(([x, y, z], i) => {
+                const px = padding + (x - minX) * scaleX;
+                const pz = canvas.height - (padding + (z - minZ) * scaleZ);
+                if (i === 0) {
+                  ctx.moveTo(px, pz);
+                } else {
+                  ctx.lineTo(px, pz);
+                }
+              });
+              ctx.strokeStyle = "red";
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              // --- ▲ 2D描画処理 ▲ ---
+
+              document.getElementById("contextMenu").style.display = "none";
+              document.getElementById("launchModal").style.display = "none";
+            } else {
+              console.error("軌道取得失敗:", data.message);
+              document.getElementById("contextMenu").style.display = "none";
+              document.getElementById("launchModal").style.display = "none";
+            }
+          })
+          .catch((error) => {
+            console.error("API通信エラー:", error);
+            document.getElementById("contextMenu").style.display = "none";
+            document.getElementById("launchModal").style.display = "none";
+          });
+      }
     </script>
   </body>
 </html>
