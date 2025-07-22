@@ -16,8 +16,8 @@ app.add_middleware(
 @app.get("/config")
 def get_config():
     return {
-        "EXE_URL": os.getenv("EXE_URL"),
-        "API_URL": os.getenv("API_URL")
+        "CESIUM_ACCESS_TOKEN": os.getenv("CESIUM_ACCESS_TOKEN"),
+        "EXE_URL": os.getenv("EXE_URL")
     }
 
 # 静的ファイルを "/static" にマウント（index.html などを含む）
