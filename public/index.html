@@ -201,13 +201,14 @@
       fetch('/config')
         .then(response => response.json())
         .then(config => {
-          Cesium.Ion.defaultAccessToken = config.CESIUM_ACCESS_TOKEN;
+          const accessToken = config.CESIUM_ACCESS_TOKEN;
           const exeURL = config.EXE_URL;
 
           console.log(config.CESIUM_ACCESS_TOKEN)
           console.log(config.EXE_URL)
       });
 
+      Cesium.Ion.defaultAccessToken = accessToken
       const viewer = new Cesium.Viewer("cesiumContainer", {
         shouldAnimate: true,
         selectionIndicator: false,
