@@ -203,6 +203,9 @@
         .then(config => {
           Cesium.Ion.defaultAccessToken = config.CESIUM_ACCESS_TOKEN;
           const exeURL = config.EXE_URL;
+
+          console.log(config.CESIUM_ACCESS_TOKEN)
+          console.log(config.EXE_URL)
       });
 
       const viewer = new Cesium.Viewer("cesiumContainer", {
