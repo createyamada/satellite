@@ -200,17 +200,19 @@
     <script>
       let accessToken;
       let exeURL;
-      fetch('/config')
-        .then(response => response.json())
-        .then(config => {
-          accessToken = config.CESIUM_ACCESS_TOKEN;
-          exeURL = config.EXE_URL;
+      // fetch('/config')
+      //   .then(response => response.json())
+      //   .then(config => {
+      //     accessToken = config.CESIUM_ACCESS_TOKEN;
+      //     exeURL = config.EXE_URL;
 
-          console.log(config.CESIUM_ACCESS_TOKEN)
-          console.log(config.EXE_URL)
-      });
+      //     console.log(config.CESIUM_ACCESS_TOKEN)
+      //     console.log(config.EXE_URL)
+      // });
 
-      Cesium.Ion.defaultAccessToken = accessToken
+      
+      Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzRkMGFjMi05YWY1LTRjOTMtYTk0My0wNGE4ZWU0N2EwMDkiLCJpZCI6MzE1MTgwLCJpYXQiOjE3NTA3NjcxNzB9.D0Caj27rXrFjpyp8Xt0UixEgfrCasXyw6g1j9ifnLvM"
+      exeURL = "https://stellaring.onrender.com:8888"
       const viewer = new Cesium.Viewer("cesiumContainer", {
         shouldAnimate: true,
         selectionIndicator: false,
