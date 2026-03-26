@@ -1,595 +1,229 @@
 <!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cesium Earth</title>
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
-    <link
-      href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css"
-      rel="stylesheet"
-    />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
-    <style>
-      html,
-      body,
-      #cesiumContainer {
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-      }
-      #info,
-      #distance,
-      #selectedNames {
-        color: white;
-        position: absolute;
-        left: 10px;
-        z-index: 100;
-      }
-      #info {
-        top: 10px;
-      }
-      #distance {
-        top: 40px;
-        color: #0f0;
-      }
-      #selectedNames {
-        top: 70px;
-        color: #0ff;
-      }
-      #contextMenu {
-        display: none;
-        position: absolute;
-        background: #222;
-        color: white;
-        border: 1px solid #555;
-        padding: 5px;
-        z-index: 1000;
-      }
-      #contextMenu div {
-        padding: 5px;
-        cursor: pointer;
-      }
-      #contextMenu div:hover {
-        background: #444;
-      }
-      #distanceEndButton {
-        display: none;
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background: #f00;
-        color: #fff;
-        padding: 8px;
-        cursor: pointer;
-        z-index: 1000;
-      }
-      #timeModal {
-        display: none;
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: #222;
-        color: white;
-        padding: 20px;
-        border: 1px solid #888;
-        z-index: 1000;
-      }
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cesium + 宇宙シミュ</title>
 
-      #launchModal {
-        display: none;
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: #222;
-        color: white;
-        padding: 20px;
-        border: 1px solid #888;
-        z-index: 1000;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="cesiumContainer"></div>
-    <div id="info"></div>
-    <div id="distance"></div>
-    <div id="selectedNames"></div>
-    <div id="contextMenu">
-      <div id="measureDistance">2衛星間距離測定</div>
-      <div id="orbitPredict">衛星軌道予測</div>
-      <div id="satelliteLaunch">現在地点から衛星発射</div>
-    </div>
-    <div id="distanceEndButton">2衛星間距離測定終了</div>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
 
-    <div id="timeModal">
-      <h3>予測時間を入力</h3>
-      <label
-        >日:
-        <input
-          id="daysInput"
-          type="number"
-          value="0"
-          min="0"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >時:
-        <input
-          id="hoursInput"
-          type="number"
-          value="0"
-          min="0"
-          max="23"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >分:
-        <input
-          id="minutesInput"
-          type="number"
-          value="0"
-          min="0"
-          max="59"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >秒:
-        <input
-          id="secondsInput"
-          type="number"
-          value="0"
-          min="0"
-          max="59"
-          style="width: 60px" /></label
-      ><br /><br />
-      <button onclick="applyTime()">OK</button>
-      <button onclick="closeTimeModal()">キャンセル</button>
-    </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 
-    <div id="launchModal">
-      <h3>予測時間を入力</h3>
-      <label
-        >高度（km）:
-        <input
-          id="altitudeInput"
-          type="number"
-          value="0"
-          min="0"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >発射角度:
-        <input
-          id="angleInput"
-          type="number"
-          value="0"
-          min="0"
-          max="360"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >初速度（秒速）:
-        <input
-          id="velocityInput"
-          type="number"
-          value="0"
-          min="0"
-          style="width: 60px" /></label
-      ><br />
-      <label
-        >予測秒数:
-        <input
-          id="predictSecondInput"
-          type="number"
-          value="0"
-          min="0"
-          style="width: 60px" /></label
-      ><br /><br />
-      <button onclick="exeLaunch()">計算開始</button>
-      <button onclick="closeLaunchModal()">キャンセル</button>
-    </div>
-    <canvas id="orbit2DCanvas"
-        width="300"
-        height="300"
-        style="position: absolute; bottom: 10px; right: 10px; border: 1px solid #ccc; background: white;">
-</canvas>
-    <script>
-      let accessToken;
-      let exeURL;
-      // fetch('/config')
-      //   .then(response => response.json())
-      //   .then(config => {
-      //     accessToken = config.CESIUM_ACCESS_TOKEN;
-      //     exeURL = config.EXE_URL;
+<!-- 🔥 WASM -->
+<script src="sim.js"></script>
 
-      //     console.log(config.CESIUM_ACCESS_TOKEN)
-      //     console.log(config.EXE_URL)
-      // });
+<style>
+html,body,#cesiumContainer{width:100%;height:100%;margin:0;padding:0;overflow:hidden;}
+#info,#distance,#selectedNames{color:white;position:absolute;left:10px;z-index:100;}
+#info{top:10px;} #distance{top:40px;color:#0f0;} #selectedNames{top:70px;color:#0ff;}
+#contextMenu{display:none;position:absolute;background:#222;color:white;border:1px solid #555;padding:5px;z-index:1000;}
+#contextMenu div{padding:5px;cursor:pointer;} #contextMenu div:hover{background:#444;}
+#distanceEndButton{display:none;position:absolute;top:10px;right:10px;background:#f00;color:#fff;padding:8px;cursor:pointer;}
+#timeModal,#launchModal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#222;color:white;padding:20px;border:1px solid #888;}
+</style>
+</head>
 
-      
-      Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzRkMGFjMi05YWY1LTRjOTMtYTk0My0wNGE4ZWU0N2EwMDkiLCJpZCI6MzE1MTgwLCJpYXQiOjE3NTA3NjcxNzB9.D0Caj27rXrFjpyp8Xt0UixEgfrCasXyw6g1j9ifnLvM"
-      exeURL = "https://stellaring.onrender.com:8888"
-      const viewer = new Cesium.Viewer("cesiumContainer", {
-        shouldAnimate: true,
-        selectionIndicator: false,
-        infoBox: false,
-      });
+<body>
 
-      // 太陽を表示
-      viewer.scene.globe.enableLighting = true;
-      viewer.scene.sun.show = true;
-      // 月を表示
-      viewer.scene.moon.show = true;
-      let minutesAhead;
-      const date = new Date();
-      let rightClickPosition = null;
-      const starlink = [];
+<div id="cesiumContainer"></div>
+<div id="info"></div>
+<div id="distance"></div>
+<div id="selectedNames"></div>
 
-      let orbitEntity = null;
-      let selectedForMeasure = null,
-        selectedSecond = null,
-        measuringMode = false,
-        lineEntity = null;
+<div id="contextMenu">
+  <div id="measureDistance">距離測定</div>
+  <div id="orbitPredict">軌道予測</div>
+  <div id="satelliteLaunch">衛星発射</div>
+</div>
 
+<div id="distanceEndButton">終了</div>
 
+<canvas id="orbit2DCanvas" width="300" height="300"
+style="position:absolute;bottom:10px;right:10px;background:white;"></canvas>
 
-      async function loadSatellites() {
-        const response = await fetch("starlink.txt");
-        const data = await response.text();
-        const lines = data.split(/\s*\n/);
-        const count = Math.floor(lines.length / 3);
-        for (let i = 0; i < count; i++) {
-          const name = lines[i * 3];
-          const rec = satellite.twoline2satrec(
-            lines[i * 3 + 1],
-            lines[i * 3 + 2]
-          );
-          const sat = { name, record: rec, entity: null };
-          const pos = computePos(rec, new Date());
-          sat.entity = viewer.entities.add({
-            name,
-            position: pos,
-            point: { pixelSize: 8, color: Cesium.Color.WHITE },
-            label: {
-              text: name,
-              font: "12px sans-serif",
-              pixelOffset: new Cesium.Cartesian2(10, -10),
-              showBackground: true,
-              show: false,
-            },
-          });
-          starlink.push(sat);
-        }
-      }
+<script>
 
-      function computePos(record, date) {
-        const gmst = satellite.gstime(date);
-        const p = satellite.propagate(record, date).position;
-        if (!p) return Cesium.Cartesian3.ZERO;
-        const geo = satellite.eciToGeodetic(p, gmst);
-        return Cesium.Cartesian3.fromRadians(
-          geo.longitude,
-          geo.latitude,
-          geo.height * 1000
-        );
-      }
+/*************************************************
+ * 🌍 Cesium初期化
+ *************************************************/
+Cesium.Ion.defaultAccessToken = "YOUR_TOKEN";
 
-      function updateSatellites() {
-        const now = new Date();
-        starlink.forEach((s) => {
-          const pos = computePos(s.record, now);
-          s.entity.position = pos;
-        });
-        if (selectedForMeasure && selectedSecond && lineEntity) {
-          lineEntity.polyline.positions = [
-            selectedForMeasure.entity.position.getValue(now),
-            selectedSecond.entity.position.getValue(now),
-          ];
-        }
-      }
+const viewer = new Cesium.Viewer("cesiumContainer", {
+  shouldAnimate: true,
+  selectionIndicator: false,
+  infoBox: false,
+});
 
-      loadSatellites();
-      setInterval(updateSatellites, 1000);
+viewer.scene.globe.enableLighting = true;
+viewer.scene.sun.show = true;
+viewer.scene.moon.show = true;
 
-      const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-      let pickedObject;
-      handler.setInputAction((movement) => {
-        const picked = viewer.scene.pick(movement.endPosition);
-        if (picked && picked.id) {
-          pickedObject = picked.id;
-          document.getElementById("info").innerText = pickedObject.name;
-        }
-      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+/*************************************************
+ * 🛰️ Starlink
+ *************************************************/
+const starlink = [];
 
-      handler.setInputAction((click) => {
-        if (!measuringMode) return;
-        const picked = viewer.scene.pick(click.position);
-        if (picked && picked.id && picked.id !== selectedForMeasure?.entity) {
-          selectedSecond = starlink.find((s) => s.entity === picked.id);
-          const pos1 = selectedForMeasure.entity.position.getValue(new Date());
-          const pos2 = selectedSecond.entity.position.getValue(new Date());
-          const dist = Cesium.Cartesian3.distance(pos1, pos2) / 1000;
-          document.getElementById("distance").innerText = `距離: ${dist.toFixed(
-            2
-          )} km`;
-          document.getElementById(
-            "selectedNames"
-          ).innerText = `選択: ${selectedForMeasure.name} → ${selectedSecond.name}`;
-          lineEntity = viewer.entities.add({
-            polyline: {
-              positions: [pos1, pos2],
-              width: 2,
-              material: Cesium.Color.LIME,
-            },
-          });
-          measuringMode = false;
-        }
-      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+async function loadSatellites(){
+  const txt = await fetch("starlink.txt").then(r=>r.text());
+  const lines = txt.split(/\n/);
 
-      document.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        const picked = viewer.scene.pick(
-          new Cesium.Cartesian2(event.clientX, event.clientY)
-        );
-        if (picked && picked.id) {
-          starlink.forEach((s) => (s._rightClick = false));
-          const target = starlink.find((s) => s.entity === picked.id);
-          if (target) {
-            target._rightClick = true;
-            const menu = document.getElementById("contextMenu");
+  for(let i=0;i<lines.length;i+=3){
+    const rec = satellite.twoline2satrec(lines[i+1],lines[i+2]);
+    const entity = viewer.entities.add({
+      position: computePos(rec,new Date()),
+      point:{pixelSize:6,color:Cesium.Color.WHITE}
+    });
+    starlink.push({record:rec,entity});
+  }
+}
 
-            menu.style.left = event.clientX + "px";
-            menu.style.top = event.clientY + "px";
-            menu.style.display = "block";
-          }
-        } else {
-          const menu = document.getElementById("contextMenu");
-          
+function computePos(rec,date){
+  const gmst = satellite.gstime(date);
+  const p = satellite.propagate(rec,date).position;
+  if(!p) return Cesium.Cartesian3.ZERO;
+  const geo = satellite.eciToGeodetic(p,gmst);
+  return Cesium.Cartesian3.fromRadians(geo.longitude,geo.latitude,geo.height*1000);
+}
 
-          const windowX = event.clientX;
-          const windowY = event.clientY;
+setInterval(()=>{
+  const now=new Date();
+  starlink.forEach(s=>s.entity.position=computePos(s.record,now));
+},1000);
 
-          const canvasX = event.clientX;
-          const canvasY = event.clientY;
+loadSatellites();
 
-          const cartesian = viewer.scene.camera.pickEllipsoid(
-            new Cesium.Cartesian2(canvasX, canvasY),
-            viewer.scene.globe.ellipsoid
-          );
+/*************************************************
+ * 🌌 WASM宇宙シミュ
+ *************************************************/
+let simStep,getX,getY,getZ,getRadius,getBodyCount,getGridY;
+const simEntities=[],simTrails=[];
+const gridEntities=[];
+const trailLen=80;
 
-          if (!cartesian) return;
+Module.onRuntimeInitialized=()=>{
+  Module.ccall("init",null,["number"],[1]);
 
-          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-          const longitude = Cesium.Math.toDegrees(cartographic.longitude);
-          const latitude = Cesium.Math.toDegrees(cartographic.latitude);
-          const height = cartographic.height;
+  simStep=Module.cwrap("step",null,["number"]);
+  getX=Module.cwrap("getX","number",["number"]);
+  getY=Module.cwrap("getY","number",["number"]);
+  getZ=Module.cwrap("getZ","number",["number"]);
+  getRadius=Module.cwrap("getRadius","number",["number"]);
+  getBodyCount=Module.cwrap("getBodyCount","number",[]);
+  getGridY=Module.cwrap("getGridY","number",["number","number"]);
 
-          rightClickPosition = { longitude, latitude };
+  createBodies();
+  createGrid();
+  loop();
+};
 
-          // メニューを表示
-          contextMenu.style.left = windowX + "px";
-          contextMenu.style.top = windowY + "px";
-          contextMenu.style.display = "block";
-        }
-      });
+/*************************************************
+ * 🌍 天体生成
+ *************************************************/
+function createBodies(){
+  const n=getBodyCount();
+  for(let i=0;i<n;i++){
+    const e=viewer.entities.add({
+      position:new Cesium.Cartesian3(),
+      ellipsoid:{radii:new Cesium.Cartesian3(1000,1000,1000),
+      material:Cesium.Color.CYAN}
+    });
+    e._trail=viewer.entities.add({
+      polyline:{positions:[],width:2,material:Cesium.Color.ORANGE}
+    });
+    simEntities.push(e);
+    simTrails.push([]);
+  }
+}
 
-      document
-        .getElementById("measureDistance")
-        .addEventListener("click", () => {
-          const target = starlink.find((s) => s._rightClick);
-          if (target) {
-            selectedForMeasure = target;
-            measuringMode = true;
-            document.getElementById("distanceEndButton").style.display =
-              "block";
-          }
-          document.getElementById("contextMenu").style.display = "none";
-        });
+/*************************************************
+ * 🌌 グリッド
+ *************************************************/
+function createGrid(){
+  const size=20000,step=2000;
 
-      document
-        .getElementById("distanceEndButton")
-        .addEventListener("click", () => {
-          document.getElementById("distance").innerText = "";
-          document.getElementById("selectedNames").innerText = "";
-          selectedForMeasure = null;
-          selectedSecond = null;
-          measuringMode = false;
-          document.getElementById("distanceEndButton").style.display = "none";
-          if (lineEntity) viewer.entities.remove(lineEntity);
-        });
+  for(let z=-size;z<=size;z+=step){
+    gridEntities.push(viewer.entities.add({
+      polyline:{positions:[],width:1,material:Cesium.Color.WHITE.withAlpha(0.2)}
+    }));
+  }
+  for(let x=-size;x<=size;x+=step){
+    gridEntities.push(viewer.entities.add({
+      polyline:{positions:[],width:1,material:Cesium.Color.WHITE.withAlpha(0.2)}
+    }));
+  }
+}
 
-      document.getElementById("orbitPredict").addEventListener("click", () => {
-        document.getElementById("timeModal").style.display = "block";
-      });
+function updateGrid(){
+  const size=20000,step=2000;
+  let i=0;
 
-      document
-        .getElementById("satelliteLaunch")
-        .addEventListener("click", () => {
-          document.getElementById("launchModal").style.display = "block";
-        });
+  for(let z=-size;z<=size;z+=step){
+    const p=[];
+    for(let x=-size;x<=size;x+=step){
+      p.push(new Cesium.Cartesian3(x*1000,getGridY(x,z)*500000,z*1000));
+    }
+    gridEntities[i++].polyline.positions=p;
+  }
 
-      function openTimeModal() {
-        document.getElementById("timeModal").style.display = "block";
-      }
+  for(let x=-size;x<=size;x+=step){
+    const p=[];
+    for(let z=-size;z<=size;z+=step){
+      p.push(new Cesium.Cartesian3(x*1000,getGridY(x,z)*500000,z*1000));
+    }
+    gridEntities[i++].polyline.positions=p;
+  }
+}
 
-      function closeTimeModal() {
-        document.getElementById("timeModal").style.display = "none";
-      }
+/*************************************************
+ * 🔄 メインループ
+ *************************************************/
+function loop(){
+  simStep(0.016);
 
-      function openLaunchModal() {
-        document.getElementById("launchModal").style.display = "block";
-      }
+  const n=getBodyCount();
 
-      function closeLaunchModal() {
-        document.getElementById("launchModal").style.display = "none";
-      }
+  for(let i=0;i<n;i++){
+    const pos=new Cesium.Cartesian3(
+      getX(i)*1000,
+      getY(i)*1000,
+      getZ(i)*1000
+    );
 
-      function applyTime() {
-        const days = parseInt(document.getElementById("daysInput").value) || 0;
-        const hours =
-          parseInt(document.getElementById("hoursInput").value) || 0;
-        const minutes =
-          parseInt(document.getElementById("minutesInput").value) || 0;
-        const seconds =
-          parseInt(document.getElementById("secondsInput").value) || 0;
+    simEntities[i].position=pos;
 
-        minutesAhead = days * 86400 + hours * 3600 + minutes * 60 + seconds;
+    simEntities[i].ellipsoid.radii=new Cesium.Cartesian3(
+      getRadius(i)*5000,
+      getRadius(i)*5000,
+      getRadius(i)*5000
+    );
 
-        console.log("合計秒数:", minutesAhead);
+    simTrails[i].push(pos);
+    if(simTrails[i].length>trailLen) simTrails[i].shift();
+    simEntities[i]._trail.polyline.positions=simTrails[i];
+  }
 
-        const target = starlink.find((s) => s._rightClick);
-        document.getElementById("contextMenu").style.display = "none";
-        if (!target) return;
+  updateGrid();
 
-        if (orbitEntity) {
-          viewer.entities.remove(orbitEntity);
-          orbitEntity = null;
-        }
+  requestAnimationFrame(loop);
+}
 
-        const positions = [];
-        const start = new Date();
-        const step = 60;
+/*************************************************
+ * 🎥 カメラ
+ *************************************************/
+viewer.camera.setView({
+  destination:new Cesium.Cartesian3(0,5e7,8e7)
+});
 
-        for (let i = 0; i <= minutesAhead * 60; i += step) {
-          const future = new Date(start.getTime() + i * 1000);
-          const pos = computePos(target.record, future);
-          positions.push(pos);
-        }
+/*************************************************
+ * 🖱️ クリック追従
+ *************************************************/
+new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+.setInputAction(click=>{
+  const picked=viewer.scene.pick(click.position);
+  if(picked) viewer.trackedEntity=picked.id;
+},Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-        orbitEntity = viewer.entities.add({
-          polyline: {
-            positions,
-            width: 2,
-            material: Cesium.Color.ORANGE.withAlpha(0.7),
-          },
-        });
-
-        closeTimeModal();
-      }
-
-      function exeLaunch() {
-        console.log("exeLaunch実行")
-
-        // const altitude =
-        //   parseInt(document.getElementById("altitudeInput").value) || 0;
-        // const angle =
-        //   parseInt(document.getElementById("angleInput").value) || 0;
-        // const velocity =
-        //   parseInt(document.getElementById("velocityInput").value) || 0;
-        // const predictSecond =
-        //   parseInt(document.getElementById("predictSecondInput").value) || 0;
-
-        // TODO:delete LEO
-        // const altitude = 500000
-        // const angle = 0
-        // const velocity = 7800
-        // TODO:delete LEO
-
-        // TODO:delete GEO
-        const altitude = 35786000
-        const angle = 0
-        const velocity = 3070
-        // TODO:delete GEO
-
-
-        
-
-        console.log("実行可能確認")
-
-        // console.log(rightClickPosition)
-
-        if (!rightClickPosition) return;
-        console.log("実行可能")
-        // console.log(rightClickPosition)
-
-        // 軌道計算APIに送るリクエスト（例）
-        const requestData = {
-          ...rightClickPosition,
-          altitude: altitude, // 高度[m]
-          angle: angle, // 仰角[度]
-          velocity: velocity, // 初速度[m/s]
-          steps: 50000, // 計算ステップ数
-        };
-
-        // APIリクエストを送信し、描画処理を行う
-        fetch("https://stellaring.onrender.com/api/calc_satellite/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestData),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.status === "success") {
-              const ecefPositions = data.trajectory_ecef;
-              console.log(ecefPositions)
-
-              const cartesianPositions = ecefPositions.map((coord) =>
-                Cesium.Cartesian3.fromElements(coord[0], coord[1], coord[2])
-              ).filter((p) => Cesium.defined(p));
-
-              viewer.entities.add({
-                name: "Satellite Orbit",
-                polyline: {
-                  positions: cartesianPositions,
-                  width: 2,
-                  material: Cesium.Color.YELLOW,
-                  arcType: Cesium.ArcType.NONE
-                },
-              });
-
-              // --- ▼ 2D描画処理 ▼ ---
-              const canvas = document.getElementById("orbit2DCanvas");
-              const ctx = canvas.getContext("2d");
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-              // X-Z平面の最大値・最小値を取得してスケーリング
-              const xs = ecefPositions.map(p => p[0]);
-              const zs = ecefPositions.map(p => p[2]);
-
-              const minX = Math.min(...xs);
-              const maxX = Math.max(...xs);
-              const minZ = Math.min(...zs);
-              const maxZ = Math.max(...zs);
-
-              const padding = 20;
-              const scaleX = (canvas.width - padding * 2) / (maxX - minX);
-              const scaleZ = (canvas.height - padding * 2) / (maxZ - minZ);
-
-              ctx.beginPath();
-              ecefPositions.forEach(([x, y, z], i) => {
-                const px = padding + (x - minX) * scaleX;
-                const pz = canvas.height - (padding + (z - minZ) * scaleZ);
-                if (i === 0) {
-                  ctx.moveTo(px, pz);
-                } else {
-                  ctx.lineTo(px, pz);
-                }
-              });
-              ctx.strokeStyle = "red";
-              ctx.lineWidth = 2;
-              ctx.stroke();
-              // --- ▲ 2D描画処理 ▲ ---
-
-              document.getElementById("contextMenu").style.display = "none";
-              document.getElementById("launchModal").style.display = "none";
-            } else {
-              console.error("軌道取得失敗:", data.message);
-              document.getElementById("contextMenu").style.display = "none";
-              document.getElementById("launchModal").style.display = "none";
-            }
-          })
-          .catch((error) => {
-            console.error("API通信エラー:", error);
-            document.getElementById("contextMenu").style.display = "none";
-            document.getElementById("launchModal").style.display = "none";
-          });
-      }
-    </script>
-  </body>
+</script>
+</body>
 </html>
