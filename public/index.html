@@ -138,9 +138,14 @@ function updateGrid(){
     const p=[];
     for(let x=-size;x<=size;x+=step){
 
-      const y = getGridY(x,z) * 1e-7;
+      let rawY = getGridY(x,z);
+      let y = rawY * 1e-7;
 
-      if(!isFinite(y)) continue;
+      if(!isFinite(y)){
+        y = 0;
+      }
+
+      y = Math.max(-1e7, Math.min(1e7, y));
 
       p.push(new Cesium.Cartesian3(
         x*1000,
@@ -148,16 +153,25 @@ function updateGrid(){
         z*1000
       ));
     }
-    if(gridEntities[i]) gridEntities[i++].polyline.positions=p;
+
+    if(gridEntities[i]) {
+      gridEntities[i].polyline.positions = p;
+      i++;
+    }
   }
 
   for(let x=-size;x<=size;x+=step){
     const p=[];
     for(let z=-size;z<=size;z+=step){
 
-      const y = getGridY(x,z) * 1e-7;
+      let rawY = getGridY(x,z);
+      let y = rawY * 1e-7;
 
-      if(!isFinite(y)) continue;
+      if(!isFinite(y)){
+        y = 0;
+      }
+
+      y = Math.max(-1e7, Math.min(1e7, y));
 
       p.push(new Cesium.Cartesian3(
         x*1000,
@@ -165,10 +179,13 @@ function updateGrid(){
         z*1000
       ));
     }
-    if(gridEntities[i]) gridEntities[i++].polyline.positions=p;
+
+    if(gridEntities[i]) {
+      gridEntities[i].polyline.positions = p;
+      i++;
+    }
   }
 }
-
 /*************************************************
  * 🔄 メインループ
  *************************************************/
