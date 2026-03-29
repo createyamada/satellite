@@ -9,38 +9,15 @@
 <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
-
-<!-- 🔥 WASM -->
 <script src="sim.js"></script>
 
 <style>
 html,body,#cesiumContainer{width:100%;height:100%;margin:0;padding:0;overflow:hidden;}
-#info,#distance,#selectedNames{color:white;position:absolute;left:10px;z-index:100;}
-#info{top:10px;} #distance{top:40px;color:#0f0;} #selectedNames{top:70px;color:#0ff;}
-#contextMenu{display:none;position:absolute;background:#222;color:white;border:1px solid #555;padding:5px;z-index:1000;}
-#contextMenu div{padding:5px;cursor:pointer;} #contextMenu div:hover{background:#444;}
-#distanceEndButton{display:none;position:absolute;top:10px;right:10px;background:#f00;color:#fff;padding:8px;cursor:pointer;}
-#timeModal,#launchModal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#222;color:white;padding:20px;border:1px solid #888;}
 </style>
 </head>
 
 <body>
-
 <div id="cesiumContainer"></div>
-<div id="info"></div>
-<div id="distance"></div>
-<div id="selectedNames"></div>
-
-<div id="contextMenu">
-  <div id="measureDistance">距離測定</div>
-  <div id="orbitPredict">軌道予測</div>
-  <div id="satelliteLaunch">衛星発射</div>
-</div>
-
-<div id="distanceEndButton">終了</div>
-
-<canvas id="orbit2DCanvas" width="300" height="300"
-style="position:absolute;bottom:10px;right:10px;background:white;"></canvas>
 
 <script>
 
@@ -55,10 +32,6 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   infoBox: false,
 });
 
-viewer.scene.globe.enableLighting = true;
-viewer.scene.sun.show = true;
-viewer.scene.moon.show = true;
-
 /*************************************************
  * 🛰️ Starlink
  *************************************************/
@@ -66,14 +39,19 @@ const starlink = [];
 
 async function loadSatellites(){
   const txt = await fetch("starlink.txt").then(r=>r.text());
-  const lines = txt.split(/\n/);
+
+  const lines = txt.split("\n").filter(l=>l.trim()!=="");
 
   for(let i=0;i<lines.length;i+=3){
+    if(!lines[i+1] || !lines[i+2]) continue;
+
     const rec = satellite.twoline2satrec(lines[i+1],lines[i+2]);
+
     const entity = viewer.entities.add({
       position: computePos(rec,new Date()),
       point:{pixelSize:6,color:Cesium.Color.WHITE}
     });
+
     starlink.push({record:rec,entity});
   }
 }
@@ -82,13 +60,22 @@ function computePos(rec,date){
   const gmst = satellite.gstime(date);
   const p = satellite.propagate(rec,date).position;
   if(!p) return Cesium.Cartesian3.ZERO;
+
   const geo = satellite.eciToGeodetic(p,gmst);
-  return Cesium.Cartesian3.fromRadians(geo.longitude,geo.latitude,geo.height*1000);
+
+  return Cesium.Cartesian3.fromRadians(
+    geo.longitude,
+    geo.latitude,
+    geo.height*1000
+  );
 }
 
 setInterval(()=>{
   const now=new Date();
-  starlink.forEach(s=>s.entity.position=computePos(s.record,now));
+  starlink.forEach(s=>{
+    const pos = computePos(s.record,now);
+    if(pos) s.entity.position = pos;
+  });
 },1000);
 
 loadSatellites();
@@ -96,24 +83,20 @@ loadSatellites();
 /*************************************************
  * 🌌 WASM宇宙シミュ
  *************************************************/
-let simStep,getX,getY,getZ,getRadius,getBodyCount,getGridY;
-const simEntities=[],simTrails=[];
-const gridEntities=[];
-const trailLen=80;
+let simStep, getCount, getPositions;
+
+const simEntities = [];
+const simTrails = [];
+const trailLen = 80;
 
 Module.onRuntimeInitialized=()=>{
-  Module.ccall("init_simulation", null, [], []);
+  Module.ccall("init_simulation");
 
-  simStep=Module.cwrap("step");
-  getX=Module.cwrap("getX","number",["number"]);
-  getY=Module.cwrap("getY","number",["number"]);
-  getZ=Module.cwrap("getZ","number",["number"]);
-  getRadius=Module.cwrap("getRadius","number",["number"]);
-  getBodyCount=Module.cwrap("get_positions", "number", [], []);
-  getGridY=Module.cwrap("getGridY","number",["number","number"]);
+  simStep = Module.cwrap("step");
+  getCount = Module.cwrap("get_count","number",[]);
+  getPositions = Module.cwrap("get_positions","number",[]);
 
   createBodies();
-  createGrid();
   loop();
 };
 
@@ -121,57 +104,23 @@ Module.onRuntimeInitialized=()=>{
  * 🌍 天体生成
  *************************************************/
 function createBodies(){
-  const n=getBodyCount();
+  const n = getCount();
+
   for(let i=0;i<n;i++){
-    const e=viewer.entities.add({
+    const e = viewer.entities.add({
       position:new Cesium.Cartesian3(),
-      ellipsoid:{radii:new Cesium.Cartesian3(1000,1000,1000),
-      material:Cesium.Color.CYAN}
+      ellipsoid:{
+        radii:new Cesium.Cartesian3(1000,1000,1000),
+        material:Cesium.Color.CYAN
+      }
     });
-    e._trail=viewer.entities.add({
+
+    e._trail = viewer.entities.add({
       polyline:{positions:[],width:2,material:Cesium.Color.ORANGE}
     });
+
     simEntities.push(e);
     simTrails.push([]);
-  }
-}
-
-/*************************************************
- * 🌌 グリッド
- *************************************************/
-function createGrid(){
-  const size=20000,step=2000;
-
-  for(let z=-size;z<=size;z+=step){
-    gridEntities.push(viewer.entities.add({
-      polyline:{positions:[],width:1,material:Cesium.Color.WHITE.withAlpha(0.2)}
-    }));
-  }
-  for(let x=-size;x<=size;x+=step){
-    gridEntities.push(viewer.entities.add({
-      polyline:{positions:[],width:1,material:Cesium.Color.WHITE.withAlpha(0.2)}
-    }));
-  }
-}
-
-function updateGrid(){
-  const size=20000,step=2000;
-  let i=0;
-
-  for(let z=-size;z<=size;z+=step){
-    const p=[];
-    for(let x=-size;x<=size;x+=step){
-      p.push(new Cesium.Cartesian3(x*1000,getGridY(x,z)*500000,z*1000));
-    }
-    gridEntities[i++].polyline.positions=p;
-  }
-
-  for(let x=-size;x<=size;x+=step){
-    const p=[];
-    for(let z=-size;z<=size;z+=step){
-      p.push(new Cesium.Cartesian3(x*1000,getGridY(x,z)*500000,z*1000));
-    }
-    gridEntities[i++].polyline.positions=p;
   }
 }
 
@@ -179,31 +128,44 @@ function updateGrid(){
  * 🔄 メインループ
  *************************************************/
 function loop(){
-  simStep(0.016);
+  simStep();
 
-  const n=getBodyCount();
+  const count = getCount();
+  const ptr   = getPositions();
 
-  for(let i=0;i<n;i++){
-    const pos=new Cesium.Cartesian3(
-      getX(i)*1000,
-      getY(i)*1000,
-      getZ(i)*1000
+  if(!ptr || count<=0){
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  const positions = new Float64Array(
+    Module.HEAPF64.buffer,
+    ptr,
+    count * 3
+  );
+
+  for(let i=0;i<count;i++){
+
+    const x = positions[i*3];
+    const y = positions[i*3+1];
+    const z = positions[i*3+2];
+
+    if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
+    if(!simEntities[i]) continue;
+
+    const pos = new Cesium.Cartesian3(
+      x*1000,
+      y*1000,
+      z*1000
     );
 
-    simEntities[i].position=pos;
-
-    simEntities[i].ellipsoid.radii=new Cesium.Cartesian3(
-      getRadius(i)*5000,
-      getRadius(i)*5000,
-      getRadius(i)*5000
-    );
+    simEntities[i].position = pos;
 
     simTrails[i].push(pos);
     if(simTrails[i].length>trailLen) simTrails[i].shift();
-    simEntities[i]._trail.polyline.positions=simTrails[i];
-  }
 
-  updateGrid();
+    simEntities[i]._trail.polyline.positions = simTrails[i];
+  }
 
   requestAnimationFrame(loop);
 }
@@ -220,8 +182,10 @@ viewer.camera.setView({
  *************************************************/
 new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
 .setInputAction(click=>{
-  const picked=viewer.scene.pick(click.position);
-  if(picked) viewer.trackedEntity=picked.id;
+  const picked = viewer.scene.pick(click.position);
+  if(picked && picked.id){
+    viewer.trackedEntity = picked.id;
+  }
 },Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
 </script>
