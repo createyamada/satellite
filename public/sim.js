@@ -469,7 +469,7 @@ function updateMemoryViews() {
   HEAP32 = new Int32Array(b);
   HEAPU32 = new Uint32Array(b);
   HEAPF32 = new Float32Array(b);
-  HEAPF64 = new Float64Array(b);
+  Module['HEAPF64'] = HEAPF64 = new Float64Array(b);
   HEAP64 = new BigInt64Array(b);
   HEAPU64 = new BigUint64Array(b);
 }
@@ -1416,7 +1416,6 @@ Module['FS_createPreloadedFile'] = FS.createPreloadedFile;
 // Begin runtime exports
   Module['ccall'] = ccall;
   Module['cwrap'] = cwrap;
-  Module['getValue'] = getValue;
   var missingLibrarySymbols = [
   'writeI53ToI64',
   'writeI53ToI64Clamped',
@@ -1612,7 +1611,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'HEAP32',
   'HEAPU32',
   'HEAPF32',
-  'HEAPF64',
   'HEAP64',
   'HEAPU64',
   'stackSave',
@@ -1640,6 +1638,7 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'freeTableIndexes',
   'functionsInTableMap',
   'setValue',
+  'getValue',
   'PATH',
   'PATH_FS',
   'UTF8Decoder',
