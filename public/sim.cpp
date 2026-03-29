@@ -108,6 +108,24 @@ int get_count() {
     return objs.size();
 }
 
+
+EMSCRIPTEN_KEEPALIVE
+double getGridY(double x, double z) {
+    double y = 0;
+
+    for (auto& o : objs) {
+        double dx = x - o.x;
+        double dz = z - o.z;
+
+        double dist = sqrt(dx*dx + dz*dz) + 1e-6;
+
+        // 重力ポテンシャル（マイナス）
+        y -= o.mass / dist;
+    }
+
+    return y;
+}
+
 // =========================
 // オブジェクト追加（JSから）
 // =========================
