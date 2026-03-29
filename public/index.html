@@ -102,7 +102,7 @@ const gridEntities=[];
 const trailLen=80;
 
 Module.onRuntimeInitialized=()=>{
-  Module.ccall("init",null,["number"],[1]);
+  Module.ccall("init_simulation", null, [], []);
 
   simStep=Module.cwrap("step",null,["number"]);
   getX=Module.cwrap("getX","number",["number"]);
