@@ -9,7 +9,8 @@
 <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
-  <script>
+
+<script>
 var Module = {
   locateFile: function(path) {
     if (path.endsWith(".wasm")) return "sim.wasm";
@@ -17,10 +18,17 @@ var Module = {
   }
 };
 </script>
+
 <script src="sim.js"></script>
 
 <style>
-html,body,#cesiumContainer{width:100%;height:100%;margin:0;padding:0;overflow:hidden;}
+html,body,#cesiumContainer{
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+}
 </style>
 </head>
 
@@ -29,12 +37,10 @@ html,body,#cesiumContainer{width:100%;height:100%;margin:0;padding:0;overflow:hi
 
 <script>
 
-  
-
 /*************************************************
  * 🌍 Cesium初期化
  *************************************************/
-Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmZGE4MmUyMi05NjNkLTRjYmMtODA4ZS0zN2IzZjRjMWJmMWQiLCJpZCI6NDEwNjgzLCJpYXQiOjE3NzQ3NjkwMjR9.kmZ-78Pd2Av_yYcwF4mlTsj1dqZ8U4irvd4SoNsjdLI";
+Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmZGE4MmUyMi05NjNkLTRjYmMtODA4ZS0zN2IzZjRjMWJmMWQiLCJpZCI6NDEwNjgzLCJpYXQiOjE3NzQ3NjkwMjR9.kmZ-78Pd2Av_yYcwF4mlTsj1dqZ8U4irvd4SoNsjdLI"; // ←自分のトークンに変更
 
 const viewer = new Cesium.Viewer("cesiumContainer", {
   shouldAnimate: true,
@@ -42,25 +48,31 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   infoBox: false,
 });
 
-
 /*************************************************
  * 🌌 WASM宇宙シミュ
  *************************************************/
-let simStep, getCount, getPositions;
+let simStep, getCount, getPositions, getGridY;
 
 const simEntities = [];
 const simTrails = [];
+const gridEntities = [];
+
 const trailLen = 80;
 
-Module.onRuntimeInitialized=()=>{
+/*************************************************
+ * 初期化
+ *************************************************/
+Module.onRuntimeInitialized = () => {
+
   Module.ccall("init_simulation");
 
-  simStep = Module.cwrap("step");
-  getCount = Module.cwrap("get_count","number",[]);
-  getPositions = Module.cwrap("get_positions","number",[]);
-  getGridY=Module.cwrap("getGridY","number",["number","number"]);
+  simStep     = Module.cwrap("step");
+  getCount    = Module.cwrap("get_count","number",[]);
+  getPositions= Module.cwrap("get_positions","number",[]);
+  getGridY    = Module.cwrap("getGridY","number",["number","number"]);
 
   createBodies();
+  createGrid();   // ⭐ 追加
   loop();
 };
 
@@ -87,50 +99,119 @@ function createBodies(){
     simTrails.push([]);
   }
 }
-  
+
+/*************************************************
+ * 🌌 グリッド生成（布）
+ *************************************************/
+function createGrid(){
+  const size=20000, step=2000;
+
+  for(let z=-size; z<=size; z+=step){
+    gridEntities.push(viewer.entities.add({
+      polyline:{
+        positions:[],
+        width:1,
+        material:Cesium.Color.WHITE.withAlpha(0.2)
+      }
+    }));
+  }
+
+  for(let x=-size; x<=size; x+=step){
+    gridEntities.push(viewer.entities.add({
+      polyline:{
+        positions:[],
+        width:1,
+        material:Cesium.Color.WHITE.withAlpha(0.2)
+      }
+    }));
+  }
+}
+
+/*************************************************
+ * 🌌 グリッド更新（重力で歪む）
+ *************************************************/
+function updateGrid(){
+  const size=20000,step=2000;
+  let i=0;
+
+  for(let z=-size;z<=size;z+=step){
+    const p=[];
+    for(let x=-size;x<=size;x+=step){
+
+      const y = getGridY(x,z) * 1e-7;
+
+      if(!isFinite(y)) continue;
+
+      p.push(new Cesium.Cartesian3(
+        x*1000,
+        y,
+        z*1000
+      ));
+    }
+    if(gridEntities[i]) gridEntities[i++].polyline.positions=p;
+  }
+
+  for(let x=-size;x<=size;x+=step){
+    const p=[];
+    for(let z=-size;z<=size;z+=step){
+
+      const y = getGridY(x,z) * 1e-7;
+
+      if(!isFinite(y)) continue;
+
+      p.push(new Cesium.Cartesian3(
+        x*1000,
+        y,
+        z*1000
+      ));
+    }
+    if(gridEntities[i]) gridEntities[i++].polyline.positions=p;
+  }
+}
 
 /*************************************************
  * 🔄 メインループ
  *************************************************/
 function loop(){
+
   simStep();
 
   const count = getCount();
   const ptr   = getPositions();
 
-  if(!ptr || count<=0){
-    requestAnimationFrame(loop);
-    return;
-  }
+  if(ptr && count>0){
 
-  const positions = new Float64Array(
-    Module.HEAPF64.buffer,
-    ptr,
-    count * 3
-  );
-
-  for(let i=0;i<count;i++){
-
-    const x = positions[i*3];
-    const y = positions[i*3+1];
-    const z = positions[i*3+2];
-
-    if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
-    if(!simEntities[i]) continue;
-
-    const pos = new Cesium.Cartesian3(
-      x*1000,
-      y*1000,
-      z*1000
+    const positions = new Float64Array(
+      Module.HEAPF64.buffer,
+      ptr,
+      count * 3
     );
 
-    simEntities[i].position = pos;
+    for(let i=0;i<count;i++){
 
-    simTrails[i].push(pos);
-    if(simTrails[i].length>trailLen) simTrails[i].shift();
+      const x = positions[i*3];
+      const y = positions[i*3+1];
+      const z = positions[i*3+2];
 
-    simEntities[i]._trail.polyline.positions = simTrails[i];
+      if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
+      if(!simEntities[i]) continue;
+
+      const pos = new Cesium.Cartesian3(
+        x*1000,
+        y*1000,
+        z*1000
+      );
+
+      simEntities[i].position = pos;
+
+      simTrails[i].push(pos);
+      if(simTrails[i].length>trailLen) simTrails[i].shift();
+
+      simEntities[i]._trail.polyline.positions = simTrails[i];
+    }
   }
+
+  updateGrid(); // ⭐ 最重要
 
   requestAnimationFrame(loop);
 }
