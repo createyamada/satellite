@@ -58,6 +58,7 @@ Module.onRuntimeInitialized=()=>{
   simStep = Module.cwrap("step");
   getCount = Module.cwrap("get_count","number",[]);
   getPositions = Module.cwrap("get_positions","number",[]);
+  getGridY=Module.cwrap("getGridY","number",["number","number"]);
 
   createBodies();
   loop();
