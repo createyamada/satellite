@@ -109,7 +109,7 @@ Module.onRuntimeInitialized=()=>{
   getY=Module.cwrap("getY","number",["number"]);
   getZ=Module.cwrap("getZ","number",["number"]);
   getRadius=Module.cwrap("getRadius","number",["number"]);
-  getBodyCount=Module.cwrap("getBodyCount","number",[]);
+  getBodyCount=Module.cwrap("get_count", "number");
   getGridY=Module.cwrap("getGridY","number",["number","number"]);
 
   createBodies();
