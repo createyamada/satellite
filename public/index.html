@@ -47,6 +47,7 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   selectionIndicator: false,
   infoBox: false,
 });
+  
 
 /*************************************************
  * 🌌 WASM宇宙シミュ
@@ -56,6 +57,7 @@ let simStep, getCount, getPositions, getGridY;
 const simEntities = [];
 const simTrails = [];
 const gridEntities = [];
+const HEIGHT_SCALE = 1e-3; // ← 超重要（大きくする）
 
 const trailLen = 80;
 
@@ -74,6 +76,7 @@ Module.onRuntimeInitialized = () => {
   createBodies();
   createGrid();   // ⭐ 追加
   loop();
+  
 };
 
 /*************************************************
@@ -165,7 +168,7 @@ function updateGrid(){
     for(let z=-size;z<=size;z+=step){
 
       let rawY = getGridY(x,z);
-      let y = rawY * 1e-7;
+      let y = rawY * HEIGHT_SCALE;
 
       if(!isFinite(y)){
         y = 0;
