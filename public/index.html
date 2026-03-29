@@ -32,53 +32,6 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   infoBox: false,
 });
 
-/*************************************************
- * 🛰️ Starlink
- *************************************************/
-const starlink = [];
-
-async function loadSatellites(){
-  const txt = await fetch("starlink.txt").then(r=>r.text());
-
-  const lines = txt.split("\n").filter(l=>l.trim()!=="");
-
-  for(let i=0;i<lines.length;i+=3){
-    if(!lines[i+1] || !lines[i+2]) continue;
-
-    const rec = satellite.twoline2satrec(lines[i+1],lines[i+2]);
-
-    const entity = viewer.entities.add({
-      position: computePos(rec,new Date()),
-      point:{pixelSize:6,color:Cesium.Color.WHITE}
-    });
-
-    starlink.push({record:rec,entity});
-  }
-}
-
-function computePos(rec,date){
-  const gmst = satellite.gstime(date);
-  const p = satellite.propagate(rec,date).position;
-  if(!p) return Cesium.Cartesian3.ZERO;
-
-  const geo = satellite.eciToGeodetic(p,gmst);
-
-  return Cesium.Cartesian3.fromRadians(
-    geo.longitude,
-    geo.latitude,
-    geo.height*1000
-  );
-}
-
-setInterval(()=>{
-  const now=new Date();
-  starlink.forEach(s=>{
-    const pos = computePos(s.record,now);
-    if(pos) s.entity.position = pos;
-  });
-},1000);
-
-loadSatellites();
 
 /*************************************************
  * 🌌 WASM宇宙シミュ
@@ -169,13 +122,6 @@ function loop(){
 
   requestAnimationFrame(loop);
 }
-
-/*************************************************
- * 🎥 カメラ
- *************************************************/
-viewer.camera.setView({
-  destination:new Cesium.Cartesian3(0,5e7,8e7)
-});
 
 /*************************************************
  * 🖱️ クリック追従
