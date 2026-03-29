@@ -104,7 +104,7 @@ const trailLen=80;
 Module.onRuntimeInitialized=()=>{
   Module.ccall("init_simulation", null, [], []);
 
-  simStep=Module.cwrap("step",null,["number"]);
+  simStep=Module.cwrap("step");
   getX=Module.cwrap("getX","number",["number"]);
   getY=Module.cwrap("getY","number",["number"]);
   getZ=Module.cwrap("getZ","number",["number"]);
