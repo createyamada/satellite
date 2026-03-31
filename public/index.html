@@ -1,37 +1,12 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<title>SpaceSim Three.js</title>
-<style>
-body { margin:0; overflow:hidden; background:black; }
-</style>
-</head>
-<body>
-
-<script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
-
-<script>
-var Module = {
-  locateFile: function(path) {
-    if (path.endsWith(".wasm")) return "sim.wasm";
-    return path;
-  }
-};
-</script>
-
-<script src="sim.js"></script>
-
 <script>
 
 // =========================
-// 🌌 スケール設定
+// 🌌 スケール
 // =========================
-const SPACE_SCALE = 1e-9;   // m → 表示
-const VISUAL_SCALE = 1e-6;  // 重力可視化
+const SPACE_SCALE = 1e-9; // ← これ重要（見えるように）
 
 // =========================
-// 🎮 Three.js 初期化
+// 🎮 初期化
 // =========================
 const scene = new THREE.Scene();
 
@@ -42,15 +17,17 @@ const camera = new THREE.PerspectiveCamera(
   1e9
 );
 
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// カメラ位置
-camera.position.z = 200;
+// 背景
+scene.background = new THREE.Color(0x000000);
 
-// ライト
-const light = new THREE.PointLight(0xffffff, 2);
+// =========================
+// ☀️ 太陽ライト
+// =========================
+const light = new THREE.PointLight(0xffffff, 3);
 scene.add(light);
 
 // =========================
@@ -60,7 +37,7 @@ let simStep, getCount, getPositions;
 
 const bodies = [];
 const trails = [];
-const trailLen = 100;
+const trailLen = 200;
 
 // =========================
 // 初期化
@@ -86,8 +63,21 @@ function createBodies(){
 
   for(let i=0;i<n;i++){
 
-    const geo = new THREE.SphereGeometry(2, 16, 16);
-    const mat = new THREE.MeshBasicMaterial({color:0x00ffff});
+    let color = 0x00ffff;
+    let size  = 2;
+
+    if(i === 0){
+      // ☀️ 太陽
+      color = 0xffff00;
+      size  = 8;
+    }else{
+      // 🌍 惑星
+      color = 0x3399ff;
+      size  = 3;
+    }
+
+    const geo = new THREE.SphereGeometry(size, 32, 32);
+    const mat = new THREE.MeshStandardMaterial({color:color});
 
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
@@ -125,7 +115,12 @@ function animate(){
 
       bodies[i].position.set(x, y, z);
 
-      // 軌跡
+      // 太陽をライト位置に
+      if(i === 0){
+        light.position.set(x,y,z);
+      }
+
+      // 軌道
       trails[i].push(new THREE.Vector3(x,y,z));
       if(trails[i].length > trailLen) trails[i].shift();
 
@@ -133,11 +128,14 @@ function animate(){
     }
   }
 
+  // 🎥 カメラを太陽に向ける
+  camera.lookAt(bodies[0].position);
+
   renderer.render(scene, camera);
 }
 
 // =========================
-// ✨ 軌跡描画
+// ✨ 軌道描画
 // =========================
 function drawTrail(i){
 
@@ -146,7 +144,7 @@ function drawTrail(i){
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(trails[i]);
-  const material = new THREE.LineBasicMaterial({color:0xffaa00});
+  const material = new THREE.LineBasicMaterial({color:0xffffff});
 
   const line = new THREE.Line(geometry, material);
 
@@ -155,7 +153,12 @@ function drawTrail(i){
 }
 
 // =========================
-// 🖱️ 操作
+// 🎥 カメラ位置（重要）
+// =========================
+camera.position.set(0, 100, 300);
+
+// =========================
+// リサイズ
 // =========================
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
@@ -164,5 +167,3 @@ window.addEventListener('resize', ()=>{
 });
 
 </script>
-</body>
-</html>
