@@ -133,57 +133,55 @@ function createGrid(){
 /*************************************************
  * 🌌 グリッド更新（重力で歪む）
  *************************************************/
+const VISUAL_SCALE = 1e-6; // ← 調整ポイント
+
 function updateGrid(){
-  const size=20000,step=2000;
-  let i=0;
+  const size = 2e11;   // 2AU
+  const step = 2e10;   // 0.2AU
 
-  for(let z=-size;z<=size;z+=step){
-    const p=[];
-    for(let x=-size;x<=size;x+=step){
+  let i = 0;
 
-      let rawY = getGridY(x,z);
-      let y = rawY * 1e-7;
+  for(let z=-size; z<=size; z+=step){
+    const p = [];
 
-      if(!isFinite(y)){
-        y = 0;
-      }
+    for(let x=-size; x<=size; x+=step){
 
-      y = Math.max(-1e7, Math.min(1e7, y));
+      let rawY = getGridY(x, z);
+      let y = rawY * VISUAL_SCALE;
+
+      if(!isFinite(y)) y = 0;
 
       p.push(new Cesium.Cartesian3(
-        x*1000,
+        x / 1000,   // m → km
         y,
-        z*1000
+        z / 1000
       ));
     }
 
-    if(gridEntities[i]) {
+    if(gridEntities[i]){
       gridEntities[i].polyline.positions = p;
       i++;
     }
   }
 
-  for(let x=-size;x<=size;x+=step){
-    const p=[];
-    for(let z=-size;z<=size;z+=step){
+  for(let x=-size; x<=size; x+=step){
+    const p = [];
 
-      let rawY = getGridY(x,z);
-      let y = rawY * HEIGHT_SCALE;
+    for(let z=-size; z<=size; z+=step){
 
-      if(!isFinite(y)){
-        y = 0;
-      }
+      let rawY = getGridY(x, z);
+      let y = rawY * VISUAL_SCALE;
 
-      y = Math.max(-1e7, Math.min(1e7, y));
+      if(!isFinite(y)) y = 0;
 
       p.push(new Cesium.Cartesian3(
-        x*1000,
+        x / 1000,
         y,
-        z*1000
+        z / 1000
       ));
     }
 
-    if(gridEntities[i]) {
+    if(gridEntities[i]){
       gridEntities[i].polyline.positions = p;
       i++;
     }
