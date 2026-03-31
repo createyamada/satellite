@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SpaceSim</title>
+<meta charset="UTF-8">
+<title>SpaceSim Three.js</title>
+<style>
+body { margin:0; overflow:hidden; background:black; }
+</style>
+</head>
+<body>
 
-<script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
-<link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
 
 <script>
 var Module = {
@@ -21,183 +22,94 @@ var Module = {
 
 <script src="sim.js"></script>
 
-<style>
-html,body,#cesiumContainer{
-  width:100%;
-  height:100%;
-  margin:0;
-  padding:0;
-  overflow:hidden;
-}
-</style>
-</head>
-
-<body>
-<div id="cesiumContainer"></div>
-
 <script>
 
-/*************************************************
- * 🌍 Cesium初期化
- *************************************************/
-Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmZGE4MmUyMi05NjNkLTRjYmMtODA4ZS0zN2IzZjRjMWJmMWQiLCJpZCI6NDEwNjgzLCJpYXQiOjE3NzQ3NjkwMjR9.kmZ-78Pd2Av_yYcwF4mlTsj1dqZ8U4irvd4SoNsjdLI"; // ←自分のトークンに変更
+// =========================
+// 🌌 スケール設定
+// =========================
+const SPACE_SCALE = 1e-9;   // m → 表示
+const VISUAL_SCALE = 1e-6;  // 重力可視化
 
-const viewer = new Cesium.Viewer("cesiumContainer", {
-  shouldAnimate: true,
-  selectionIndicator: false,
-  infoBox: false,
-});
-  
+// =========================
+// 🎮 Three.js 初期化
+// =========================
+const scene = new THREE.Scene();
 
-/*************************************************
- * 🌌 WASM宇宙シミュ
- *************************************************/
-let simStep, getCount, getPositions, getGridY;
+const camera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth/window.innerHeight,
+  0.1,
+  1e9
+);
 
-const simEntities = [];
-const simTrails = [];
-const gridEntities = [];
-const HEIGHT_SCALE = 1e-3; // ← 超重要（大きくする）
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-const trailLen = 80;
+// カメラ位置
+camera.position.z = 200;
 
-/*************************************************
- * 初期化
- *************************************************/
+// ライト
+const light = new THREE.PointLight(0xffffff, 2);
+scene.add(light);
+
+// =========================
+// WASM
+// =========================
+let simStep, getCount, getPositions;
+
+const bodies = [];
+const trails = [];
+const trailLen = 100;
+
+// =========================
+// 初期化
+// =========================
 Module.onRuntimeInitialized = () => {
 
   Module.ccall("init_simulation");
 
-  simStep     = Module.cwrap("step");
-  getCount    = Module.cwrap("get_count","number",[]);
-  getPositions= Module.cwrap("get_positions","number",[]);
-  getGridY    = Module.cwrap("getGridY","number",["number","number"]);
+  simStep      = Module.cwrap("step");
+  getCount     = Module.cwrap("get_count","number",[]);
+  getPositions = Module.cwrap("get_positions","number",[]);
 
   createBodies();
-  createGrid();   // ⭐ 追加
-  loop();
-  
+  animate();
 };
 
-/*************************************************
- * 🌍 天体生成
- *************************************************/
+// =========================
+// 🌍 天体生成
+// =========================
 function createBodies(){
+
   const n = getCount();
 
   for(let i=0;i<n;i++){
-    const e = viewer.entities.add({
-      position:new Cesium.Cartesian3(),
-      ellipsoid:{
-        radii:new Cesium.Cartesian3(1000,1000,1000),
-        material:Cesium.Color.CYAN
-      }
-    });
 
-    e._trail = viewer.entities.add({
-      polyline:{positions:[],width:2,material:Cesium.Color.ORANGE}
-    });
+    const geo = new THREE.SphereGeometry(2, 16, 16);
+    const mat = new THREE.MeshBasicMaterial({color:0x00ffff});
 
-    simEntities.push(e);
-    simTrails.push([]);
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+
+    bodies.push(mesh);
+    trails.push([]);
   }
 }
 
-/*************************************************
- * 🌌 グリッド生成（布）
- *************************************************/
-function createGrid(){
-  const size=20000, step=2000;
+// =========================
+// 🔄 メインループ
+// =========================
+function animate(){
 
-  for(let z=-size; z<=size; z+=step){
-    gridEntities.push(viewer.entities.add({
-      polyline:{
-        positions:[],
-        width:1,
-        material:Cesium.Color.WHITE.withAlpha(0.2)
-      }
-    }));
-  }
-
-  for(let x=-size; x<=size; x+=step){
-    gridEntities.push(viewer.entities.add({
-      polyline:{
-        positions:[],
-        width:1,
-        material:Cesium.Color.WHITE.withAlpha(0.2)
-      }
-    }));
-  }
-}
-
-/*************************************************
- * 🌌 グリッド更新（重力で歪む）
- *************************************************/
-const VISUAL_SCALE = 1e-6; // ← 調整ポイント
-
-function updateGrid(){
-  const size = 2e11;   // 2AU
-  const step = 2e10;   // 0.2AU
-
-  let i = 0;
-
-  for(let z=-size; z<=size; z+=step){
-    const p = [];
-
-    for(let x=-size; x<=size; x+=step){
-
-      let rawY = getGridY(x, z);
-      let y = rawY * VISUAL_SCALE;
-
-      if(!isFinite(y)) y = 0;
-
-      p.push(new Cesium.Cartesian3(
-        x / 1000,   // m → km
-        y,
-        z / 1000
-      ));
-    }
-
-    if(gridEntities[i]){
-      gridEntities[i].polyline.positions = p;
-      i++;
-    }
-  }
-
-  for(let x=-size; x<=size; x+=step){
-    const p = [];
-
-    for(let z=-size; z<=size; z+=step){
-
-      let rawY = getGridY(x, z);
-      let y = rawY * VISUAL_SCALE;
-
-      if(!isFinite(y)) y = 0;
-
-      p.push(new Cesium.Cartesian3(
-        x / 1000,
-        y,
-        z / 1000
-      ));
-    }
-
-    if(gridEntities[i]){
-      gridEntities[i].polyline.positions = p;
-      i++;
-    }
-  }
-}
-/*************************************************
- * 🔄 メインループ
- *************************************************/
-function loop(){
+  requestAnimationFrame(animate);
 
   simStep();
 
   const count = getCount();
   const ptr   = getPositions();
 
-  if(ptr && count>0){
+  if(ptr){
 
     const positions = new Float64Array(
       Module.HEAPF64.buffer,
@@ -207,43 +119,49 @@ function loop(){
 
     for(let i=0;i<count;i++){
 
-      const x = positions[i*3];
-      const y = positions[i*3+1];
-      const z = positions[i*3+2];
+      let x = positions[i*3]   * SPACE_SCALE;
+      let y = positions[i*3+1] * SPACE_SCALE;
+      let z = positions[i*3+2] * SPACE_SCALE;
 
-      if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
-      if(!simEntities[i]) continue;
+      bodies[i].position.set(x, y, z);
 
-      const pos = new Cesium.Cartesian3(
-        x*1000,
-        y*1000,
-        z*1000
-      );
+      // 軌跡
+      trails[i].push(new THREE.Vector3(x,y,z));
+      if(trails[i].length > trailLen) trails[i].shift();
 
-      simEntities[i].position = pos;
-
-      simTrails[i].push(pos);
-      if(simTrails[i].length>trailLen) simTrails[i].shift();
-
-      simEntities[i]._trail.polyline.positions = simTrails[i];
+      drawTrail(i);
     }
   }
 
-  updateGrid(); // ⭐ 最重要
-
-  requestAnimationFrame(loop);
+  renderer.render(scene, camera);
 }
 
-/*************************************************
- * 🖱️ クリック追従
- *************************************************/
-new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
-.setInputAction(click=>{
-  const picked = viewer.scene.pick(click.position);
-  if(picked && picked.id){
-    viewer.trackedEntity = picked.id;
+// =========================
+// ✨ 軌跡描画
+// =========================
+function drawTrail(i){
+
+  if(bodies[i].trail){
+    scene.remove(bodies[i].trail);
   }
-},Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(trails[i]);
+  const material = new THREE.LineBasicMaterial({color:0xffaa00});
+
+  const line = new THREE.Line(geometry, material);
+
+  bodies[i].trail = line;
+  scene.add(line);
+}
+
+// =========================
+// 🖱️ 操作
+// =========================
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
 </script>
 </body>
