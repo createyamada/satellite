@@ -5,93 +5,96 @@
 extern "C" {
 
 // =========================
-// 定数
+// 定数（SI単位）
 // =========================
-const double G = 6.6743e-11;
+const double G = 6.67430e-11;
 
-// =========================
-// オブジェクト構造体
 // =========================
 struct Object {
-    double x, y, z;
-    double vx, vy, vz;
-    double mass;
+    double x, y, z;      // m
+    double vx, vy, vz;   // m/s
+    double mass;         // kg
 };
 
-// =========================
-// シミュレーションデータ
-// =========================
 std::vector<Object> objs;
-
-// JSに渡す用バッファ
 std::vector<double> positions;
 
 // =========================
-// 初期化
+// 初期化（太陽＋地球）
 // =========================
 EMSCRIPTEN_KEEPALIVE
 void init_simulation() {
     objs.clear();
 
-    // 太陽っぽいもの
-    objs.push_back({0, 0, 0, 0, 0, 0, 1.989e25});
+    // 太陽
+    objs.push_back({
+        0,0,0,
+        0,0,0,
+        1.989e30
+    });
 
-    // 2つの惑星
-    objs.push_back({-5000, 0, 0, 0, 0, 1200, 5.972e22});
-    objs.push_back({5000, 0, 0, 0, 0, -1200, 5.972e22});
+    // 地球
+    objs.push_back({
+        1.5e11, 0, 0,        // 1AU
+        0, 30000, 0,         // 約30km/s
+        5.972e24
+    });
 }
 
 // =========================
-// 重力計算（1ステップ）
+// 重力ステップ（SI）
 // =========================
 EMSCRIPTEN_KEEPALIVE
 void step() {
     int n = objs.size();
 
-    // 加速度配列
-    std::vector<double> ax(n, 0), ay(n, 0), az(n, 0);
+    std::vector<double> ax(n,0), ay(n,0), az(n,0);
 
-    // 全ペア計算
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            if (i == j) continue;
+    for(int i=0;i<n;i++){
+        for(int j=0;j<n;j++){
+            if(i==j) continue;
 
             double dx = objs[j].x - objs[i].x;
             double dy = objs[j].y - objs[i].y;
             double dz = objs[j].z - objs[i].z;
 
-            double dist = sqrt(dx*dx + dy*dy + dz*dz) + 1e-6;
+            double r2 = dx*dx + dy*dy + dz*dz;
 
-            double force = G * objs[i].mass * objs[j].mass / (dist * dist);
+            // ソフトニング（発散防止）
+            double eps = 1e9; // 1000km
+            r2 += eps*eps;
 
-            double acc = force / objs[i].mass;
+            double r = sqrt(r2);
 
-            ax[i] += acc * dx / dist;
-            ay[i] += acc * dy / dist;
-            az[i] += acc * dz / dist;
+            double a = G * objs[j].mass / r2;
+
+            ax[i] += a * dx / r;
+            ay[i] += a * dy / r;
+            az[i] += a * dz / r;
         }
     }
 
-    // 速度・位置更新
-    for (int i = 0; i < n; i++) {
-        objs[i].vx += ax[i];
-        objs[i].vy += ay[i];
-        objs[i].vz += az[i];
+    double dt = 60.0; // 60秒
 
-        objs[i].x += objs[i].vx * 0.01;
-        objs[i].y += objs[i].vy * 0.01;
-        objs[i].z += objs[i].vz * 0.01;
+    for(int i=0;i<n;i++){
+        objs[i].vx += ax[i] * dt;
+        objs[i].vy += ay[i] * dt;
+        objs[i].vz += az[i] * dt;
+
+        objs[i].x += objs[i].vx * dt;
+        objs[i].y += objs[i].vy * dt;
+        objs[i].z += objs[i].vz * dt;
     }
 }
 
 // =========================
-// JSに位置配列を渡す
+// 位置取得
 // =========================
 EMSCRIPTEN_KEEPALIVE
 double* get_positions() {
     positions.clear();
 
-    for (auto& o : objs) {
+    for(auto& o : objs){
         positions.push_back(o.x);
         positions.push_back(o.y);
         positions.push_back(o.z);
@@ -100,41 +103,33 @@ double* get_positions() {
     return positions.data();
 }
 
-// =========================
-// オブジェクト数取得
-// =========================
 EMSCRIPTEN_KEEPALIVE
 int get_count() {
     return objs.size();
 }
 
-
+// =========================
+// 重力ポテンシャル（SI）
+// =========================
 EMSCRIPTEN_KEEPALIVE
 double getGridY(double x, double z) {
-    double y = 0;
+    double phi = 0;
 
-    for (auto& o : objs) {
+    for(auto& o : objs){
         double dx = x - o.x;
         double dz = z - o.z;
 
-        double dist = sqrt(dx*dx + dz*dz) + 1e-6;
+        double r2 = dx*dx + dz*dz;
 
-        // 重力ポテンシャル（マイナス）
-        y -= o.mass / dist;
+        double eps = 1e9;
+        r2 += eps*eps;
+
+        double r = sqrt(r2);
+
+        phi += -G * o.mass / r;
     }
 
-    return y;
-}
-
-// =========================
-// オブジェクト追加（JSから）
-// =========================
-EMSCRIPTEN_KEEPALIVE
-void add_object(double x, double y, double z,
-                double vx, double vy, double vz,
-                double mass) {
-
-    objs.push_back({x, y, z, vx, vy, vz, mass});
+    return phi;
 }
 
 }
