@@ -2,15 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Gravity Simulation</title>
+<title>Gravity Simulation (ESM)</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
 </style>
 </head>
 <body>
-
-<script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.155.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
 var Module = {
@@ -20,7 +17,14 @@ var Module = {
 
 <script src="sim.js"></script>
 
-<script>
+<!-- ★ここが重要 -->
+<script type="module">
+
+// =========================
+// ES Modules import
+// =========================
+import * as THREE from "https://unpkg.com/three@0.155.0/build/three.module.js";
+import { OrbitControls } from "https://unpkg.com/three@0.155.0/examples/jsm/controls/OrbitControls.js";
 
 // =========================
 // スケール
@@ -32,14 +36,20 @@ const HEIGHT_SCALE = 1e-6;
 // Three.js
 // =========================
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,10000);
+
+const camera = new THREE.PerspectiveCamera(
+  75,
+  innerWidth/innerHeight,
+  0.1,
+  10000
+);
 camera.position.set(0,100,300);
 
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 
 // =========================
 // 光
@@ -50,8 +60,8 @@ scene.add(light);
 // =========================
 // 天体
 // =========================
-let simStep,getCount,getPositions,getPotential;
-const meshes=[];
+let simStep, getCount, getPositions, getPotential;
+const meshes = [];
 
 // =========================
 // 重力の布
@@ -75,8 +85,8 @@ Module.onRuntimeInitialized = ()=>{
 
   Module.ccall("init_simulation");
 
-  simStep = Module.cwrap("step");
-  getCount = Module.cwrap("get_count","number",[]);
+  simStep      = Module.cwrap("step");
+  getCount     = Module.cwrap("get_count","number",[]);
   getPositions = Module.cwrap("get_positions","number",[]);
   getPotential = Module.cwrap("getPotential","number",["number","number"]);
 
@@ -130,9 +140,7 @@ function animate(){
     }
   }
 
-  // =========================
-  // 🌌 重力の布更新
-  // =========================
+  // 重力ポテンシャル
   const pos = plane.geometry.attributes.position;
 
   for(let i=0;i<pos.count;i++){
