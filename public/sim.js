@@ -1833,7 +1833,7 @@ var _init_simulation = Module['_init_simulation'] = makeInvalidEarlyAccess('_ini
 var _step = Module['_step'] = makeInvalidEarlyAccess('_step');
 var _get_positions = Module['_get_positions'] = makeInvalidEarlyAccess('_get_positions');
 var _get_count = Module['_get_count'] = makeInvalidEarlyAccess('_get_count');
-var _getGridY = Module['_getGridY'] = makeInvalidEarlyAccess('_getGridY');
+var _getPotential = Module['_getPotential'] = makeInvalidEarlyAccess('_getPotential');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _strerror = makeInvalidEarlyAccess('_strerror');
 var _emscripten_stack_init = makeInvalidEarlyAccess('_emscripten_stack_init');
@@ -1852,7 +1852,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['step'] != 'undefined', 'missing Wasm export: step');
   assert(typeof wasmExports['get_positions'] != 'undefined', 'missing Wasm export: get_positions');
   assert(typeof wasmExports['get_count'] != 'undefined', 'missing Wasm export: get_count');
-  assert(typeof wasmExports['getGridY'] != 'undefined', 'missing Wasm export: getGridY');
+  assert(typeof wasmExports['getPotential'] != 'undefined', 'missing Wasm export: getPotential');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['strerror'] != 'undefined', 'missing Wasm export: strerror');
   assert(typeof wasmExports['emscripten_stack_init'] != 'undefined', 'missing Wasm export: emscripten_stack_init');
@@ -1868,7 +1868,7 @@ function assignWasmExports(wasmExports) {
   _step = Module['_step'] = createExportWrapper('step', 0);
   _get_positions = Module['_get_positions'] = createExportWrapper('get_positions', 0);
   _get_count = Module['_get_count'] = createExportWrapper('get_count', 0);
-  _getGridY = Module['_getGridY'] = createExportWrapper('getGridY', 2);
+  _getPotential = Module['_getPotential'] = createExportWrapper('getPotential', 2);
   _fflush = createExportWrapper('fflush', 1);
   _strerror = createExportWrapper('strerror', 1);
   _emscripten_stack_init = wasmExports['emscripten_stack_init'];

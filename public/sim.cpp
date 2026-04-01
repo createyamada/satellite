@@ -4,49 +4,43 @@
 
 extern "C" {
 
-// =========================
-// 定数（SI単位）
-// =========================
 const double G = 6.67430e-11;
 
-// =========================
-struct Object {
-    double x, y, z;      // m
-    double vx, vy, vz;   // m/s
-    double mass;         // kg
+struct Body {
+    double x,y,z;
+    double vx,vy,vz;
+    double m;
 };
 
-std::vector<Object> objs;
-std::vector<double> positions;
+std::vector<Body> bodies;
+std::vector<double> pos;
 
 // =========================
-// 初期化（太陽＋地球）
+// 初期化（SI単位）
 // =========================
 EMSCRIPTEN_KEEPALIVE
-void init_simulation() {
-    objs.clear();
+void init_simulation(){
 
-    // 太陽
-    objs.push_back({
-        0,0,0,
-        0,0,0,
-        1.989e30
-    });
+    bodies.clear();
 
-    // 地球
-    objs.push_back({
-        1.5e11, 0, 0,        // 1AU
-        0, 30000, 0,         // 約30km/s
-        5.972e24
-    });
+    // ☀️ 太陽
+    bodies.push_back({0,0,0,0,0,0,1.989e30});
+
+    // 🌍 地球
+    bodies.push_back({1.496e11,0,0,0,29780,0,5.972e24});
+
+    // 🔴 火星
+    bodies.push_back({2.279e11,0,0,0,24070,0,6.39e23});
 }
 
 // =========================
-// 重力ステップ（SI）
+// ステップ
 // =========================
 EMSCRIPTEN_KEEPALIVE
-void step() {
-    int n = objs.size();
+void step(){
+
+    int n = bodies.size();
+    double dt = 3600; // 1時間
 
     std::vector<double> ax(n,0), ay(n,0), az(n,0);
 
@@ -54,19 +48,14 @@ void step() {
         for(int j=0;j<n;j++){
             if(i==j) continue;
 
-            double dx = objs[j].x - objs[i].x;
-            double dy = objs[j].y - objs[i].y;
-            double dz = objs[j].z - objs[i].z;
+            double dx = bodies[j].x - bodies[i].x;
+            double dy = bodies[j].y - bodies[i].y;
+            double dz = bodies[j].z - bodies[i].z;
 
-            double r2 = dx*dx + dy*dy + dz*dz;
-
-            // ソフトニング（発散防止）
-            double eps = 1e9; // 1000km
-            r2 += eps*eps;
-
+            double r2 = dx*dx + dy*dy + dz*dz + 1e18;
             double r = sqrt(r2);
 
-            double a = G * objs[j].mass / r2;
+            double a = G * bodies[j].m / r2;
 
             ax[i] += a * dx / r;
             ay[i] += a * dy / r;
@@ -74,16 +63,14 @@ void step() {
         }
     }
 
-    double dt = 60.0; // 60秒
-
     for(int i=0;i<n;i++){
-        objs[i].vx += ax[i] * dt;
-        objs[i].vy += ay[i] * dt;
-        objs[i].vz += az[i] * dt;
+        bodies[i].vx += ax[i]*dt;
+        bodies[i].vy += ay[i]*dt;
+        bodies[i].vz += az[i]*dt;
 
-        objs[i].x += objs[i].vx * dt;
-        objs[i].y += objs[i].vy * dt;
-        objs[i].z += objs[i].vz * dt;
+        bodies[i].x += bodies[i].vx*dt;
+        bodies[i].y += bodies[i].vy*dt;
+        bodies[i].z += bodies[i].vz*dt;
     }
 }
 
@@ -91,42 +78,36 @@ void step() {
 // 位置取得
 // =========================
 EMSCRIPTEN_KEEPALIVE
-double* get_positions() {
-    positions.clear();
-
-    for(auto& o : objs){
-        positions.push_back(o.x);
-        positions.push_back(o.y);
-        positions.push_back(o.z);
+double* get_positions(){
+    pos.clear();
+    for(auto &b: bodies){
+        pos.push_back(b.x);
+        pos.push_back(b.y);
+        pos.push_back(b.z);
     }
-
-    return positions.data();
+    return pos.data();
 }
 
 EMSCRIPTEN_KEEPALIVE
-int get_count() {
-    return objs.size();
+int get_count(){
+    return bodies.size();
 }
 
 // =========================
-// 重力ポテンシャル（SI）
+// 重力ポテンシャル
 // =========================
 EMSCRIPTEN_KEEPALIVE
-double getGridY(double x, double z) {
+double getPotential(double x,double z){
+
     double phi = 0;
 
-    for(auto& o : objs){
-        double dx = x - o.x;
-        double dz = z - o.z;
+    for(auto &b: bodies){
+        double dx = x - b.x;
+        double dz = z - b.z;
 
-        double r2 = dx*dx + dz*dz;
+        double r = sqrt(dx*dx + dz*dz + 1e18);
 
-        double eps = 1e9;
-        r2 += eps*eps;
-
-        double r = sqrt(r2);
-
-        phi += -G * o.mass / r;
+        phi += -G * b.m / r;
     }
 
     return phi;
