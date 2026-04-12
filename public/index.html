@@ -8,7 +8,7 @@
 body { margin:0; overflow:hidden; background:black; }
 </style>
 
-<!-- ✅ ① importmapは最初 -->
+<!-- ✅ importmap -->
 <script type="importmap">
 {
   "imports": {
@@ -19,19 +19,25 @@ body { margin:0; overflow:hidden; background:black; }
 }
 </script>
 
-<!-- ✅ ② Moduleは先に定義（超重要） -->
+<!-- ✅ Module定義 -->
 <script>
 var Module = {
   locateFile: (p)=> p.endsWith(".wasm") ? "sim.wasm" : p,
 
   onRuntimeInitialized: function () {
     console.log("WASM ready");
-    startApp(); // ←ここで起動
+
+    // 🔥 startAppが定義されるまで待つ
+    const wait = setInterval(() => {
+      if (window.startApp) {
+        clearInterval(wait);
+        window.startApp();
+      }
+    }, 10);
   }
 };
 </script>
 
-<!-- ✅ ③ WASMロード -->
 <script src="sim.js"></script>
 
 </head>
@@ -96,9 +102,11 @@ const plane = new THREE.Mesh(geometry, material);
 scene.add(plane);
 
 // =========================
-// 🚀 WASM初期化後に呼ばれる
+// 🚀 グローバル公開（重要）
 // =========================
 window.startApp = function () {
+
+  console.log("App start");
 
   Module.ccall("init_simulation");
 
@@ -131,8 +139,6 @@ function createBodies() {
 }
 
 // =========================
-// ループ
-// =========================
 function animate() {
 
   requestAnimationFrame(animate);
@@ -157,9 +163,7 @@ function animate() {
     }
   }
 
-  // =========================
-  // 🌌 重力ポテンシャル
-  // =========================
+  // 重力ポテンシャル
   const pos = plane.geometry.attributes.position;
 
   for (let i = 0; i < pos.count; i++) {
