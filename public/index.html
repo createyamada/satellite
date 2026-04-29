@@ -80,6 +80,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 const light = new THREE.PointLight(0xffffff, 2);
 scene.add(light);
 
+renderer.setClearColor(0xffffff, 1);
+
 // =========================
 // 天体
 // =========================
@@ -93,6 +95,8 @@ const gridSize = 100;
 const geometry = new THREE.PlaneGeometry(400, 400, gridSize, gridSize);
 geometry.rotateX(-Math.PI / 2);
 
+
+
 const material = new THREE.MeshStandardMaterial({
   color: 0x2266ff,
   side: THREE.DoubleSide,
@@ -104,6 +108,8 @@ dirLight.position.set(200, 300, 100);
 scene.add(dirLight);
 
 const plane = new THREE.Mesh(geometry, material);
+pos.needsUpdate = true;
+plane.geometry.computeVertexNormals();
 scene.add(plane);
 
 // =========================
@@ -176,12 +182,17 @@ function animate() {
     let x = pos.getX(i) / SPACE_SCALE;
     let z = pos.getZ(i) / SPACE_SCALE;
 
-    let y = getPotential(x, z) * HEIGHT_SCALE;
+    // let y = getPotential(x, z) * HEIGHT_SCALE;
+    let phi = getPotential(x, z) * HEIGHT_SCALE;
+
+    // 👇 ここが超重要
+    let y = Math.log10(-phi + 1) * 10;
 
     pos.setY(i, y);
   }
 
   pos.needsUpdate = true;
+  plane.geometry.computeVertexNormals();
 
   controls.update();
   renderer.render(scene, camera);
