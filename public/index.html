@@ -182,11 +182,11 @@ function animate() {
     let x = pos.getX(i) / SPACE_SCALE;
     let z = pos.getZ(i) / SPACE_SCALE;
 
-    // let y = getPotential(x, z) * HEIGHT_SCALE;
-    let phi = getPotential(x, z) * HEIGHT_SCALE;
+    let y = getPotential(x, z) * HEIGHT_SCALE;
+    // let phi = getPotential(x, z) * HEIGHT_SCALE;
 
-    // 👇 ここが超重要
-    let y = Math.log10(-phi + 1) * 10;
+    // // 👇 ここが超重要
+    // let y = Math.log10(-phi + 1) * 10;
 
     pos.setY(i, y);
   }
