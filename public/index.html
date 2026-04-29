@@ -2,13 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Gravity Simulation (ESM)</title>
+<title>Relativity Gravity</title>
 
 <style>
-body { margin:0; overflow:hidden; background:black; }
+body { margin:0; overflow:hidden; background:white; }
 </style>
 
-<!-- ✅ importmap -->
 <script type="importmap">
 {
   "imports": {
@@ -19,15 +18,10 @@ body { margin:0; overflow:hidden; background:black; }
 }
 </script>
 
-<!-- ✅ Module定義 -->
 <script>
 var Module = {
   locateFile: (p)=> p.endsWith(".wasm") ? "sim.wasm" : p,
-
   onRuntimeInitialized: function () {
-    console.log("WASM ready");
-
-    // 🔥 startAppが定義されるまで待つ
     const wait = setInterval(() => {
       if (window.startApp) {
         clearInterval(wait);
@@ -39,7 +33,6 @@ var Module = {
 </script>
 
 <script src="sim.js"></script>
-
 </head>
 
 <body>
@@ -49,11 +42,10 @@ var Module = {
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-// =========================
-// スケール
-// =========================
+const G = 6.67430e-11;
+const c = 299792458;
+
 const SPACE_SCALE = 1e-9;
-const HEIGHT_SCALE = 5e-5;
 
 // =========================
 // Three.js
@@ -64,124 +56,100 @@ const camera = new THREE.PerspectiveCamera(
   75,
   innerWidth / innerHeight,
   0.1,
-  10000
+  100000
 );
-camera.position.set(0, 100, 300);
+camera.position.set(0, 500, 2000);
 
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0xffffff, 1);
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 
-// =========================
 // 光
-// =========================
-const light = new THREE.PointLight(0xffffff, 2);
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+const light = new THREE.DirectionalLight(0xffffff, 1.5);
+light.position.set(200,300,200);
 scene.add(light);
 
 // =========================
-// 天体
+// グリッド（線）
 // =========================
-let simStep, getCount, getPositions, getPotential;
-const meshes = [];
+const gridSize = 150;
 
-// =========================
-// 重力の布
-// =========================
-const gridSize = 100;
-const geometry = new THREE.PlaneGeometry(400, 400, gridSize, gridSize);
-geometry.rotateX(-Math.PI / 2);
+const geometry = new THREE.PlaneGeometry(2000, 2000, gridSize, gridSize);
+geometry.rotateX(-Math.PI/2);
 
-
-
-const material = new THREE.MeshStandardMaterial({
-  color: 0x2266ff,
-  side: THREE.DoubleSide,
-  flatShading: true
+const material = new THREE.MeshBasicMaterial({
+  color: 0x000000,
+  wireframe: true
 });
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(200, 300, 100);
-scene.add(dirLight);
-
 const plane = new THREE.Mesh(geometry, material);
-pos.needsUpdate = true;
-plane.geometry.computeVertexNormals();
 scene.add(plane);
 
 // =========================
-// 🚀 グローバル公開（重要）
+// WASM
 // =========================
-window.startApp = function () {
+let simStep, getCount, getPositions, getMasses;
 
-  console.log("App start");
+window.startApp = function () {
 
   Module.ccall("init_simulation");
 
   simStep      = Module.cwrap("step");
   getCount     = Module.cwrap("get_count", "number", []);
   getPositions = Module.cwrap("get_positions", "number", []);
-  getPotential = Module.cwrap("getPotential", "number", ["number","number"]);
+  getMasses    = Module.cwrap("get_masses", "number", []);
 
-  createBodies();
   animate();
 };
 
 // =========================
-function createBodies() {
-
-  const n = getCount();
-
-  for (let i = 0; i < n; i++) {
-
-    const geo = new THREE.SphereGeometry(i === 0 ? 5 : 2, 32, 32);
-    const mat = new THREE.MeshStandardMaterial({
-      color: i === 0 ? 0xffff00 : 0x3399ff
-    });
-
-    const m = new THREE.Mesh(geo, mat);
-    scene.add(m);
-
-    meshes.push(m);
-  }
-}
-
+// アニメーション
 // =========================
-function animate() {
+function animate(){
 
   requestAnimationFrame(animate);
 
   simStep();
 
-  const ptr = getPositions();
   const count = getCount();
 
-  const arr = new Float64Array(Module.HEAPF64.buffer, ptr, count * 3);
+  const posPtr = getPositions();
+  const arr = new Float64Array(Module.HEAPF64.buffer, posPtr, count * 3);
 
-  for (let i = 0; i < count; i++) {
+  const massPtr = getMasses();
+  const masses = new Float64Array(Module.HEAPF64.buffer, massPtr, count);
 
-    const x = arr[i * 3]     * SPACE_SCALE;
-    const y = arr[i * 3 + 1] * SPACE_SCALE;
-    const z = arr[i * 3 + 2] * SPACE_SCALE;
-
-    meshes[i].position.set(x, y, z);
-
-    if (i === 0) {
-      light.position.set(x, y, z);
-    }
-  }
-
-  // 重力ポテンシャル
   const pos = plane.geometry.attributes.position;
 
-  for (let i = 0; i < pos.count; i++) {
+  for(let i=0;i<pos.count;i++){
 
-    let x = pos.getX(i) / SPACE_SCALE;
-    let z = pos.getZ(i) / SPACE_SCALE;
+    let x = pos.getX(i) / SPACE_SCALE * 50;
+    let z = pos.getZ(i) / SPACE_SCALE * 50;
 
-  let y = getPotential(x, z) * HEIGHT_SCALE * 10;
+    let y = 0;
 
+    for(let j=0;j<count;j++){
+
+      const bx = arr[j*3];
+      const bz = arr[j*3+2];
+      const m  = masses[j];
+
+      const dx = x - bx;
+      const dz = z - bz;
+
+      const dist = Math.sqrt(dx*dx + dz*dz) + 1e6;
+
+      const rs = (2 * G * m) / (c*c);
+
+      const warp = 2 * Math.sqrt(Math.abs(rs * (dist - rs)));
+
+      y += warp * 1e-6;
+    }
 
     pos.setY(i, y);
   }
@@ -193,14 +161,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// =========================
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
 </script>
-
 </body>
 </html>

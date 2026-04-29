@@ -113,4 +113,15 @@ double getPotential(double x,double z){
     return phi;
 }
 
+EMSCRIPTEN_KEEPALIVE
+double* get_masses(){
+    static std::vector<double> masses;
+    masses.clear();
+
+    for(auto &b : bodies){
+        masses.push_back(b.m);
+    }
+    return masses.data();
+}
+
 }
