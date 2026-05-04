@@ -168,62 +168,34 @@ function animate(){
   // =========================
   // 🌌 空間の歪み
   // =========================
-  const pos = plane.geometry.attributes.position;
+const pos = plane.geometry.attributes.position;
 
-  for (let i=0;i<pos.count;i++){
+for (let i = 0; i < pos.count; i++) {
 
-    let x = pos.getX(i)/SPACE_SCALE*50;
-    let z = pos.getZ(i)/SPACE_SCALE*50;
+  let worldX = pos.getX(i) / SPACE_SCALE;
+  let worldZ = pos.getZ(i) / SPACE_SCALE;
 
-    let y = 0;
+  let y = 0;
 
-    for (let j=0;j<count;j++){
+  for (let j = 0; j < count; j++) {
 
-      const dx = x - arr[j*3];
-      const dz = z - arr[j*3+2];
+    const bx = arr[j * 3];
+    const bz = arr[j * 3 + 2];
+    const m  = masses[j];
 
-      const dist = Math.sqrt(dx*dx + dz*dz)+1e6;
+    const dx = worldX - bx;
+    const dz = worldZ - bz;
 
-      const rs = (2*G*masses[j])/(c*c);
+    const dist = Math.sqrt(dx * dx + dz * dz) + 1e9;
 
-      y += 2*Math.sqrt(Math.abs(rs*(dist-rs))) * 1e-6;
-    }
-
-    let vx = pos.getX(i);
-    let vy = pos.getY(i);
-    let vz = pos.getZ(i);
-
-    let dx_total = 0;
-    let dy_total = 0;
-    let dz_total = 0;
-
-    for (let j = 0; j < count; j++) {
-
-      const bx = arr[j*3];
-      const by = arr[j*3+1];
-      const bz = arr[j*3+2];
-
-      let dx = bx - vx;
-      let dy = by - vy;
-      let dz = bz - vz;
-
-      let dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 1e6;
-
-      let strength = masses[j] / (dist * dist);
-
-      dx_total += dx * strength;
-      dy_total += dy * strength;
-      dz_total += dz * strength;
-    }
-
-    // 🔥 位置そのものを変える
-    pos.setXYZ(
-      i,
-      vx + dx_total * 0.00001,
-      vy + dy_total * 0.00001,
-      vz + dz_total * 0.00001
-    );
+    // 🔥 Newton型ポテンシャル（安定版）
+    y += - (G * m) / dist;
   }
+
+  // 🔥 見やすいようにスケーリング
+  pos.setY(i, y * 1e-7);
+}
+
 
   pos.needsUpdate = true;
   plane.geometry.computeVertexNormals();
