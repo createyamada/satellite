@@ -44,20 +44,17 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const G = 6.67430e-11;
 const c = 299792458;
-
 const SPACE_SCALE = 1e-9;
 
 // =========================
 // Three.js
 // =========================
+const meshes = [];
+const trails = []; // ←追加
+
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(
-  75,
-  innerWidth / innerHeight,
-  0.1,
-  100000
-);
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100000);
 camera.position.set(0, 500, 2000);
 
 const renderer = new THREE.WebGLRenderer();
@@ -67,7 +64,6 @@ document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 
-// 光
 scene.add(new THREE.AmbientLight(0xffffff, 0.3));
 
 const light = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -75,19 +71,15 @@ light.position.set(200,300,200);
 scene.add(light);
 
 // =========================
-// グリッド（線）
+// グリッド
 // =========================
-const gridSize = 150;
-
-const geometry = new THREE.PlaneGeometry(2000, 2000, gridSize, gridSize);
+const geometry = new THREE.PlaneGeometry(2000,2000,150,150);
 geometry.rotateX(-Math.PI/2);
 
-const material = new THREE.MeshBasicMaterial({
-  color: 0x000000,
-  wireframe: true
-});
-
-const plane = new THREE.Mesh(geometry, material);
+const plane = new THREE.Mesh(
+  geometry,
+  new THREE.MeshBasicMaterial({ color:0x000000, wireframe:true })
+);
 scene.add(plane);
 
 // =========================
@@ -104,6 +96,32 @@ window.startApp = function () {
   getPositions = Module.cwrap("get_positions", "number", []);
   getMasses    = Module.cwrap("get_masses", "number", []);
 
+  const count = getCount();
+
+  for (let i = 0; i < count; i++) {
+
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(i===0?80:20,32,32),
+      new THREE.MeshStandardMaterial({
+        color: i===0?0xffcc00:0x3399ff,
+        emissive: i===0?0xffaa00:0x000000,
+        emissiveIntensity: i===0?5:0
+      })
+    );
+
+    scene.add(mesh);
+    meshes.push(mesh);
+
+    // 軌道
+    const trail = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color:0x000000 })
+    );
+
+    scene.add(trail);
+    trails.push({ line: trail, points: [] });
+  }
+
   animate();
 };
 
@@ -119,46 +137,66 @@ function animate(){
   const count = getCount();
 
   const posPtr = getPositions();
-  const arr = new Float64Array(Module.HEAPF64.buffer, posPtr, count * 3);
+  const arr = new Float64Array(Module.HEAPF64.buffer, posPtr, count*3);
 
   const massPtr = getMasses();
   const masses = new Float64Array(Module.HEAPF64.buffer, massPtr, count);
 
+  // =========================
+  // 🌍 惑星位置更新 + 軌道
+  // =========================
+  for (let i = 0; i < count; i++) {
+
+    const posVec = new THREE.Vector3(
+      arr[i*3] * SPACE_SCALE,
+      arr[i*3+1] * SPACE_SCALE,
+      arr[i*3+2] * SPACE_SCALE
+    );
+
+    meshes[i].position.copy(posVec);
+
+    const trail = trails[i];
+    trail.points.push(posVec.clone());
+
+    if (trail.points.length > 200) {
+      trail.points.shift();
+    }
+
+    trail.line.geometry.setFromPoints(trail.points);
+  }
+
+  // =========================
+  // 🌌 空間の歪み
+  // =========================
   const pos = plane.geometry.attributes.position;
 
-  for(let i=0;i<pos.count;i++){
+  for (let i=0;i<pos.count;i++){
 
-    let x = pos.getX(i) / SPACE_SCALE * 50;
-    let z = pos.getZ(i) / SPACE_SCALE * 50;
+    let x = pos.getX(i)/SPACE_SCALE*50;
+    let z = pos.getZ(i)/SPACE_SCALE*50;
 
     let y = 0;
 
-    for(let j=0;j<count;j++){
+    for (let j=0;j<count;j++){
 
-      const bx = arr[j*3];
-      const bz = arr[j*3+2];
-      const m  = masses[j];
+      const dx = x - arr[j*3];
+      const dz = z - arr[j*3+2];
 
-      const dx = x - bx;
-      const dz = z - bz;
+      const dist = Math.sqrt(dx*dx + dz*dz)+1e6;
 
-      const dist = Math.sqrt(dx*dx + dz*dz) + 1e6;
+      const rs = (2*G*masses[j])/(c*c);
 
-      const rs = (2 * G * m) / (c*c);
-
-      const warp = 2 * Math.sqrt(Math.abs(rs * (dist - rs)));
-
-      y += warp * 1e-6;
+      y += 2*Math.sqrt(Math.abs(rs*(dist-rs))) * 1e-6;
     }
 
-    pos.setY(i, y);
+    pos.setY(i,y);
   }
 
   pos.needsUpdate = true;
   plane.geometry.computeVertexNormals();
 
   controls.update();
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 }
 
 </script>
