@@ -1,38 +1,61 @@
+```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Relativity Gravity</title>
+<title>Gravity Simulation</title>
 
 <style>
-body { margin:0; overflow:hidden; background:white; }
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+}
+
+canvas{
+    display:block;
+}
 </style>
+
+<link rel="icon" href="data:,">
 
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+    "three":"https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
     "three/examples/jsm/controls/OrbitControls.js":
-      "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/controls/OrbitControls.js"
+    "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/controls/OrbitControls.js"
   }
 }
 </script>
 
 <script>
 var Module = {
-  locateFile: (p)=> p.endsWith(".wasm") ? "sim.wasm" : p,
-  onRuntimeInitialized: function () {
-    const wait = setInterval(() => {
-      if (window.startApp) {
-        clearInterval(wait);
-        window.startApp();
-      }
-    }, 10);
-  }
+
+    locateFile:(p)=>
+        p.endsWith(".wasm")
+        ? "sim.wasm"
+        : p,
+
+    onRuntimeInitialized:()=>{
+
+        const wait=setInterval(()=>{
+
+            if(window.startApp){
+
+                clearInterval(wait);
+                window.startApp();
+
+            }
+
+        },10);
+
+    }
 };
 </script>
 
 <script src="sim.js"></script>
+
 </head>
 
 <body>
@@ -40,170 +63,446 @@ var Module = {
 <script type="module">
 
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { OrbitControls }
+from "three/examples/jsm/controls/OrbitControls.js";
 
-const G = 6.67430e-11;
-const c = 299792458;
-const SPACE_SCALE = 1e-9;
+// =====================================================
+// 定数
+// =====================================================
 
-// =========================
-// Three.js
-// =========================
-const meshes = [];
-const trails = []; // ←追加
+const SPACE_SCALE = 1e-7;
+
+const GRID_SIZE = 2000;
+const GRID_SEGMENTS = 120;
+
+const TRAIL_LENGTH = 256;
+
+// =====================================================
+// scene
+// =====================================================
 
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100000);
-camera.position.set(0, 500, 2000);
+scene.background = new THREE.Color(0x000000);
 
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(innerWidth, innerHeight);
-renderer.setClearColor(0xffffff, 1);
-document.body.appendChild(renderer.domElement);
+// =====================================================
+// camera
+// =====================================================
 
-const controls = new OrbitControls(camera, renderer.domElement);
+const camera =
+    new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100000
+    );
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+camera.position.set(0,600,1800);
 
-const light = new THREE.DirectionalLight(0xffffff, 1.5);
-light.position.set(200,300,200);
+// =====================================================
+// renderer
+// =====================================================
+
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias:true
+    });
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+renderer.setPixelRatio(
+    window.devicePixelRatio
+);
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+// =====================================================
+// controls
+// =====================================================
+
+const controls =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+controls.enableDamping = true;
+
+// =====================================================
+// light
+// =====================================================
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.5
+    )
+);
+
+const light =
+    new THREE.PointLight(
+        0xffffff,
+        3
+    );
+
+light.position.set(0,500,0);
+
 scene.add(light);
 
-// =========================
-// グリッド
-// =========================
-const geometry = new THREE.PlaneGeometry(2000,2000,150,150);
-geometry.rotateX(-Math.PI/2);
+// =====================================================
+// gravity grid
+// =====================================================
 
-const plane = new THREE.Mesh(
-  geometry,
-  new THREE.MeshBasicMaterial({ color:0x000000, wireframe:true })
-);
-scene.add(plane);
-
-// =========================
-// WASM
-// =========================
-let simStep, getCount, getPositions, getMasses;
-
-window.startApp = function () {
-
-  Module.ccall("init_simulation");
-
-  simStep      = Module.cwrap("step");
-  getCount     = Module.cwrap("get_count", "number", []);
-  getPositions = Module.cwrap("get_positions", "number", []);
-  getMasses    = Module.cwrap("get_masses", "number", []);
-
-  const count = getCount();
-
-  for (let i = 0; i < count; i++) {
-
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(i===0?80:20,32,32),
-      new THREE.MeshStandardMaterial({
-        color: i===0?0xffcc00:0x3399ff,
-        emissive: i===0?0xffaa00:0x000000,
-        emissiveIntensity: i===0?5:0
-      })
+const gridGeometry =
+    new THREE.PlaneGeometry(
+        GRID_SIZE,
+        GRID_SIZE,
+        GRID_SEGMENTS,
+        GRID_SEGMENTS
     );
 
-    scene.add(mesh);
-    meshes.push(mesh);
+gridGeometry.rotateX(-Math.PI/2);
 
-    // 軌道
-    const trail = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color:0x000000 })
+const gridMaterial =
+    new THREE.MeshBasicMaterial({
+
+        color:0x44aaff,
+        wireframe:true
+
+    });
+
+const grid =
+    new THREE.Mesh(
+        gridGeometry,
+        gridMaterial
     );
 
-    scene.add(trail);
-    trails.push({ line: trail, points: [] });
-  }
+scene.add(grid);
 
-  animate();
-};
+// 保存用
+const originalPositions =
+    gridGeometry.attributes.position.array.slice();
 
-// =========================
-// アニメーション
-// =========================
-function animate(){
+// =====================================================
+// objects
+// =====================================================
 
-  requestAnimationFrame(animate);
+const bodies = [];
+const trails = [];
 
-  simStep();
+// =====================================================
+// wasm
+// =====================================================
 
-  const count = getCount();
+let simStep;
+let getCount;
+let getPositions;
+let getMasses;
 
-  const posPtr = getPositions();
-  const arr = new Float64Array(Module.HEAPF64.buffer, posPtr, count*3);
+// =====================================================
+// start
+// =====================================================
 
-  const massPtr = getMasses();
-  const masses = new Float64Array(Module.HEAPF64.buffer, massPtr, count);
+window.startApp = ()=>{
 
-  // =========================
-  // 🌍 惑星位置更新 + 軌道
-  // =========================
-  for (let i = 0; i < count; i++) {
+    Module.ccall("init_simulation");
 
-    const posVec = new THREE.Vector3(
-      arr[i*3] * SPACE_SCALE,
-      arr[i*3+1] * SPACE_SCALE,
-      arr[i*3+2] * SPACE_SCALE
-    );
+    simStep =
+        Module.cwrap("step");
 
-    meshes[i].position.copy(posVec);
+    getCount =
+        Module.cwrap(
+            "get_count",
+            "number",
+            []
+        );
 
-    const trail = trails[i];
-    trail.points.push(posVec.clone());
+    getPositions =
+        Module.cwrap(
+            "get_positions",
+            "number",
+            []
+        );
 
-    if (trail.points.length > 200) {
-      trail.points.shift();
+    getMasses =
+        Module.cwrap(
+            "get_masses",
+            "number",
+            []
+        );
+
+    const count = getCount();
+
+    // =================================================
+    // create planets
+    // =================================================
+
+    for(let i=0;i<count;i++){
+
+        const mesh =
+            new THREE.Mesh(
+
+                new THREE.SphereGeometry(
+                    i===0 ? 60 : 16,
+                    32,
+                    32
+                ),
+
+                new THREE.MeshStandardMaterial({
+
+                    color:
+                        i===0
+                        ? 0xffcc00
+                        : 0x66aaff,
+
+                    emissive:
+                        i===0
+                        ? 0xffaa00
+                        : 0x000000,
+
+                    emissiveIntensity:
+                        i===0
+                        ? 3
+                        : 0
+
+                })
+            );
+
+        scene.add(mesh);
+
+        bodies.push(mesh);
+
+        // =============================================
+        // trail
+        // =============================================
+
+        const positions =
+            new Float32Array(
+                TRAIL_LENGTH * 3
+            );
+
+        const geometry =
+            new THREE.BufferGeometry();
+
+        geometry.setAttribute(
+
+            "position",
+
+            new THREE.BufferAttribute(
+                positions,
+                3
+            )
+        );
+
+        geometry.setDrawRange(0,0);
+
+        const material =
+            new THREE.LineBasicMaterial({
+
+                color:0xffffff
+
+            });
+
+        const line =
+            new THREE.Line(
+                geometry,
+                material
+            );
+
+        scene.add(line);
+
+        trails.push({
+
+            positions,
+            geometry,
+            line,
+            count:0
+
+        });
+
     }
 
-    trail.line.geometry.setFromPoints(trail.points);
-  }
+    animate();
 
-  // =========================
-  // 🌌 空間の歪み
-  // =========================
-const pos = plane.geometry.attributes.position;
+};
 
-for (let i = 0; i < pos.count; i++) {
+// =====================================================
+// animate
+// =====================================================
 
-  let worldX = pos.getX(i) / SPACE_SCALE;
-  let worldZ = pos.getZ(i) / SPACE_SCALE;
+function animate(){
 
-  let y = 0;
+    requestAnimationFrame(animate);
 
-  for (let j = 0; j < count; j++) {
+    simStep();
 
-    const bx = arr[j * 3];
-    const bz = arr[j * 3 + 2];
-    const m  = masses[j];
+    const count = getCount();
 
-    const dx = worldX - bx;
-    const dz = worldZ - bz;
+    const posPtr = getPositions();
 
-    const dist = Math.sqrt(dx * dx + dz * dz) + 1e9;
+    const arr =
+        new Float64Array(
+            Module.HEAPF64.buffer,
+            posPtr,
+            count * 3
+        );
 
-    // 🔥 Newton型ポテンシャル（安定版）
-    y += - (G * m) / dist;
-  }
+    const massPtr = getMasses();
 
-  // 🔥 見やすいようにスケーリング
-  pos.setY(i, y * 1e-7);
+    const masses =
+        new Float64Array(
+            Module.HEAPF64.buffer,
+            massPtr,
+            count
+        );
+
+    // =================================================
+    // bodies
+    // =================================================
+
+    for(let i=0;i<count;i++){
+
+        const x =
+            arr[i*3] * SPACE_SCALE;
+
+        const y =
+            arr[i*3+1] * SPACE_SCALE;
+
+        const z =
+            arr[i*3+2] * SPACE_SCALE;
+
+        bodies[i].position.set(x,y,z);
+
+        // =============================================
+        // trail update
+        // =============================================
+
+        const trail = trails[i];
+
+        if(trail.count < TRAIL_LENGTH){
+
+            trail.count++;
+
+        }
+
+        for(let j=0;j<trail.count-1;j++){
+
+            trail.positions[j*3] =
+                trail.positions[(j+1)*3];
+
+            trail.positions[j*3+1] =
+                trail.positions[(j+1)*3+1];
+
+            trail.positions[j*3+2] =
+                trail.positions[(j+1)*3+2];
+
+        }
+
+        const idx =
+            (trail.count-1)*3;
+
+        trail.positions[idx] = x;
+        trail.positions[idx+1] = y;
+        trail.positions[idx+2] = z;
+
+        trail.geometry.attributes
+            .position
+            .needsUpdate = true;
+
+        trail.geometry.setDrawRange(
+            0,
+            trail.count
+        );
+
+    }
+
+    // =================================================
+    // gravity grid
+    // =================================================
+
+    const pos =
+        gridGeometry.attributes.position;
+
+    for(let i=0;i<pos.count;i++){
+
+        const ox =
+            originalPositions[i*3];
+
+        const oz =
+            originalPositions[i*3+2];
+
+        let depth = 0;
+
+        for(let j=0;j<count;j++){
+
+            const bx =
+                arr[j*3] * SPACE_SCALE;
+
+            const bz =
+                arr[j*3+2] * SPACE_SCALE;
+
+            const dx = ox - bx;
+            const dz = oz - bz;
+
+            const dist =
+                Math.sqrt(
+                    dx*dx + dz*dz
+                ) + 30;
+
+            depth +=
+                8000 / dist;
+
+        }
+
+        pos.array[i*3+1] =
+            -depth;
+
+    }
+
+    pos.needsUpdate = true;
+
+    // =================================================
+    // render
+    // =================================================
+
+    controls.update();
+
+    renderer.render(
+        scene,
+        camera
+    );
+
 }
 
+// =====================================================
+// resize
+// =====================================================
 
-  pos.needsUpdate = true;
-  plane.geometry.computeVertexNormals();
+window.addEventListener(
+    "resize",
+    ()=>{
 
-  controls.update();
-  renderer.render(scene,camera);
-}
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
+
+    }
+);
 
 </script>
+
 </body>
 </html>
+```
