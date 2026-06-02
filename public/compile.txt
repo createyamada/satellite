@@ -1,3 +1,14 @@
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\emsdk_env.ps1
 emcc sim.cpp -o sim.js -s EXPORTED_FUNCTIONS='["_init_simulation","_step","_get_positions","_get_count","_getPotential"]' -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPF64"]' -s ALLOW_MEMORY_GROWTH=1
+
+
+./emsdk activate latest
+source ./emsdk_env.sh
+
+emcc sim.cpp -O3 -ffast-math \
+-s WASM=1 \
+-s ALLOW_MEMORY_GROWTH=1 \
+-s EXPORTED_FUNCTIONS='["_init_simulation","_step","_get_positions","_get_count","_get_masses"]' \
+-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPF64"]' \
+-o sim.js

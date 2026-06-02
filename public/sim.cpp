@@ -4,123 +4,280 @@
 
 extern "C" {
 
-const double G = 6.67430e-11;
-
 struct Body {
-    double x,y,z;
-    double vx,vy,vz;
-    double m;
+
+    double x, y, z;
+    double vx, vy, vz;
+    double mass;
+
 };
 
 std::vector<Body> bodies;
-std::vector<double> pos;
 
-// =========================
-// 初期化（SI単位）
-// =========================
+const double G  = 6.67430e-11;
+const double DT = 60.0 * 60.0 * 6.0;
+
+// =====================================================
+// add planet
+// =====================================================
+
+void add_planet(
+    double distance,
+    double velocity,
+    double mass
+){
+
+    Body b;
+
+    b.x = distance;
+    b.y = 0;
+    b.z = 0;
+
+    b.vx = 0;
+    b.vy = velocity;
+    b.vz = 0;
+
+    b.mass = mass;
+
+    bodies.push_back(b);
+}
+
+// =====================================================
+// init
+// =====================================================
+
 EMSCRIPTEN_KEEPALIVE
 void init_simulation(){
 
     bodies.clear();
 
-    // ☀️ 太陽
-    bodies.push_back({0,0,0,0,0,0,1.989e30});
+    // Sun
+    bodies.push_back({
+        0,0,0,
+        0,0,0,
+        1.989e30
+    });
 
-    // 🌍 地球
-    bodies.push_back({1.496e11,0,0,0,29780,0,5.972e24});
-
-    // 🔴 火星
-    bodies.push_back({2.279e11,0,0,0,24070,0,6.39e23});
+    add_planet(5.79e10, 47400, 3.30e23); // Mercury
+    add_planet(1.082e11, 35000, 4.87e24); // Venus
+    add_planet(1.496e11, 29780, 5.97e24); // Earth
+    add_planet(2.279e11, 24077, 6.42e23); // Mars
+    add_planet(7.785e11, 13070, 1.90e27); // Jupiter
+    add_planet(1.433e12, 9680, 5.68e26); // Saturn
+    add_planet(2.877e12, 6800, 8.68e25); // Uranus
+    add_planet(4.503e12, 5430, 1.02e26); // Neptune
 }
 
-// =========================
-// ステップ
-// =========================
+// =====================================================
+// acceleration
+// =====================================================
+
+void compute_acceleration(
+    const std::vector<Body>& state,
+    std::vector<double>& ax,
+    std::vector<double>& ay,
+    std::vector<double>& az
+){
+
+    int n = state.size();
+
+    ax.assign(n,0);
+    ay.assign(n,0);
+    az.assign(n,0);
+
+    for(int i=0;i<n;i++){
+
+        for(int j=0;j<n;j++){
+
+            if(i==j) continue;
+
+            double dx = state[j].x - state[i].x;
+            double dy = state[j].y - state[i].y;
+            double dz = state[j].z - state[i].z;
+
+            double distSq =
+                dx*dx + dy*dy + dz*dz + 1e6;
+
+            double dist =
+                sqrt(distSq);
+
+            double force =
+                G * state[j].mass /
+                distSq;
+
+            ax[i] += force * dx / dist;
+            ay[i] += force * dy / dist;
+            az[i] += force * dz / dist;
+        }
+    }
+}
+
+// =====================================================
+// RK4 step
+// =====================================================
+
 EMSCRIPTEN_KEEPALIVE
 void step(){
 
     int n = bodies.size();
-    double dt = 3600; // 1時間
 
-    std::vector<double> ax(n,0), ay(n,0), az(n,0);
+    std::vector<double> ax1,ay1,az1;
+    std::vector<double> ax2,ay2,az2;
+    std::vector<double> ax3,ay3,az3;
+    std::vector<double> ax4,ay4,az4;
+
+    compute_acceleration(
+        bodies,
+        ax1,ay1,az1
+    );
+
+    std::vector<Body> s2 = bodies;
 
     for(int i=0;i<n;i++){
-        for(int j=0;j<n;j++){
-            if(i==j) continue;
 
-            double dx = bodies[j].x - bodies[i].x;
-            double dy = bodies[j].y - bodies[i].y;
-            double dz = bodies[j].z - bodies[i].z;
+        s2[i].x += bodies[i].vx * DT * 0.5;
+        s2[i].y += bodies[i].vy * DT * 0.5;
+        s2[i].z += bodies[i].vz * DT * 0.5;
 
-            double r2 = dx*dx + dy*dy + dz*dz + 1e18;
-            double r = sqrt(r2);
-
-            double a = G * bodies[j].m / r2;
-
-            ax[i] += a * dx / r;
-            ay[i] += a * dy / r;
-            az[i] += a * dz / r;
-        }
+        s2[i].vx += ax1[i] * DT * 0.5;
+        s2[i].vy += ay1[i] * DT * 0.5;
+        s2[i].vz += az1[i] * DT * 0.5;
     }
 
-    for(int i=0;i<n;i++){
-        bodies[i].vx += ax[i]*dt;
-        bodies[i].vy += ay[i]*dt;
-        bodies[i].vz += az[i]*dt;
+    compute_acceleration(
+        s2,
+        ax2,ay2,az2
+    );
 
-        bodies[i].x += bodies[i].vx*dt;
-        bodies[i].y += bodies[i].vy*dt;
-        bodies[i].z += bodies[i].vz*dt;
+    std::vector<Body> s3 = bodies;
+
+    for(int i=0;i<n;i++){
+
+        s3[i].x += s2[i].vx * DT * 0.5;
+        s3[i].y += s2[i].vy * DT * 0.5;
+        s3[i].z += s2[i].vz * DT * 0.5;
+
+        s3[i].vx += ax2[i] * DT * 0.5;
+        s3[i].vy += ay2[i] * DT * 0.5;
+        s3[i].vz += az2[i] * DT * 0.5;
+    }
+
+    compute_acceleration(
+        s3,
+        ax3,ay3,az3
+    );
+
+    std::vector<Body> s4 = bodies;
+
+    for(int i=0;i<n;i++){
+
+        s4[i].x += s3[i].vx * DT;
+        s4[i].y += s3[i].vy * DT;
+        s4[i].z += s3[i].vz * DT;
+
+        s4[i].vx += ax3[i] * DT;
+        s4[i].vy += ay3[i] * DT;
+        s4[i].vz += az3[i] * DT;
+    }
+
+    compute_acceleration(
+        s4,
+        ax4,ay4,az4
+    );
+
+    for(int i=0;i<n;i++){
+
+        bodies[i].x +=
+            DT * (
+                bodies[i].vx +
+                2.0*s2[i].vx +
+                2.0*s3[i].vx +
+                s4[i].vx
+            ) / 6.0;
+
+        bodies[i].y +=
+            DT * (
+                bodies[i].vy +
+                2.0*s2[i].vy +
+                2.0*s3[i].vy +
+                s4[i].vy
+            ) / 6.0;
+
+        bodies[i].z +=
+            DT * (
+                bodies[i].vz +
+                2.0*s2[i].vz +
+                2.0*s3[i].vz +
+                s4[i].vz
+            ) / 6.0;
+
+        bodies[i].vx +=
+            DT * (
+                ax1[i] +
+                2.0*ax2[i] +
+                2.0*ax3[i] +
+                ax4[i]
+            ) / 6.0;
+
+        bodies[i].vy +=
+            DT * (
+                ay1[i] +
+                2.0*ay2[i] +
+                2.0*ay3[i] +
+                ay4[i]
+            ) / 6.0;
+
+        bodies[i].vz +=
+            DT * (
+                az1[i] +
+                2.0*az2[i] +
+                2.0*az3[i] +
+                az4[i]
+            ) / 6.0;
     }
 }
 
-// =========================
-// 位置取得
-// =========================
-EMSCRIPTEN_KEEPALIVE
-double* get_positions(){
-    pos.clear();
-    for(auto &b: bodies){
-        pos.push_back(b.x);
-        pos.push_back(b.y);
-        pos.push_back(b.z);
-    }
-    return pos.data();
-}
+// =====================================================
 
 EMSCRIPTEN_KEEPALIVE
 int get_count(){
+
     return bodies.size();
 }
 
-// =========================
-// 重力ポテンシャル
-// =========================
+// =====================================================
+
 EMSCRIPTEN_KEEPALIVE
-double getPotential(double x,double z){
+double* get_positions(){
 
-    double phi = 0;
+    static std::vector<double> pos;
 
-    for(auto &b: bodies){
-        double dx = x - b.x;
-        double dz = z - b.z;
+    pos.resize(bodies.size()*3);
 
-        double r = sqrt(dx*dx + dz*dz + 1e18);
+    for(size_t i=0;i<bodies.size();i++){
 
-        phi += -G * b.m / r;
+        pos[i*3]   = bodies[i].x;
+        pos[i*3+1] = bodies[i].y;
+        pos[i*3+2] = bodies[i].z;
     }
 
-    return phi;
+    return pos.data();
 }
+
+// =====================================================
 
 EMSCRIPTEN_KEEPALIVE
 double* get_masses(){
-    static std::vector<double> masses;
-    masses.clear();
 
-    for(auto &b : bodies){
-        masses.push_back(b.m);
+    static std::vector<double> masses;
+
+    masses.resize(bodies.size());
+
+    for(size_t i=0;i<bodies.size();i++){
+
+        masses[i] = bodies[i].mass;
     }
+
     return masses.data();
 }
 

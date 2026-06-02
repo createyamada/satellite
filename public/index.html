@@ -1,25 +1,26 @@
 ```html
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="UTF-8">
-<title>Gravity Simulation</title>
+    <meta charset="UTF-8">
+    <title>Gravity Simulation</title>
 
-<style>
-body{
-    margin:0;
-    overflow:hidden;
-    background:black;
-}
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black;
+        }
 
-canvas{
-    display:block;
-}
-</style>
+        canvas {
+            display: block;
+        }
+    </style>
 
-<link rel="icon" href="data:,">
+    <link rel="icon" href="data:,">
 
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
     "three":"https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
@@ -29,480 +30,502 @@ canvas{
 }
 </script>
 
-<script>
-var Module = {
+    <script>
+        window.Module = {
 
-    locateFile:(p)=>
-        p.endsWith(".wasm")
-        ? "sim.wasm"
-        : p,
+            locateFile: (p) =>
+                p.endsWith(".wasm")
+                    ? "sim.wasm"
+                    : p,
 
-    onRuntimeInitialized:()=>{
+            onRuntimeInitialized: () => {
 
-        const wait=setInterval(()=>{
+                const wait = setInterval(() => {
 
-            if(window.startApp){
+                    if (window.startApp) {
 
-                clearInterval(wait);
-                window.startApp();
+                        clearInterval(wait);
+                        window.startApp();
+
+                    }
+
+                }, 10);
 
             }
+        };
+    </script>
 
-        },10);
-
-    }
-};
-</script>
-
-<script src="sim.js"></script>
+    <script src="sim.js"></script>
 
 </head>
 
 <body>
 
-<script type="module">
+    <script type="module">
 
-import * as THREE from "three";
-import { OrbitControls }
-from "three/examples/jsm/controls/OrbitControls.js";
+        import * as THREE from "three";
+        import { OrbitControls }
+            from "three/examples/jsm/controls/OrbitControls.js";
 
-// =====================================================
-// 定数
-// =====================================================
+        // =====================================================
+        // 定数
+        // =====================================================
 
-const SPACE_SCALE = 1e-7;
+        const SPACE_SCALE = 1e-9;
 
-const GRID_SIZE = 2000;
-const GRID_SEGMENTS = 120;
+        const GRID_SIZE = 2000;
+        const GRID_SEGMENTS = 120;
 
-const TRAIL_LENGTH = 256;
+        const TRAIL_LENGTH = 256;
 
-// =====================================================
-// scene
-// =====================================================
+        const sizes = [
+            70, // Sun
+            4,  // Mercury
+            7,  // Venus
+            8,  // Earth
+            6,  // Mars
+            20, // Jupiter
+            18, // Saturn
+            14, // Uranus
+            14  // Neptune
+        ];
 
-const scene = new THREE.Scene();
+        const colors = [
+            0xffcc00,
+            0xaaaaaa,
+            0xffbb88,
+            0x3399ff,
+            0xff5533,
+            0xffaa88,
+            0xffddaa,
+            0x66ccff,
+            0x4444ff
+        ];
 
-scene.background = new THREE.Color(0x000000);
+        // =====================================================
+        // scene
+        // =====================================================
 
-// =====================================================
-// camera
-// =====================================================
+        const scene = new THREE.Scene();
 
-const camera =
-    new THREE.PerspectiveCamera(
-        60,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        100000
-    );
+        scene.background = new THREE.Color(0x000000);
 
-camera.position.set(0,600,1800);
+        // =====================================================
+        // camera
+        // =====================================================
 
-// =====================================================
-// renderer
-// =====================================================
-
-const renderer =
-    new THREE.WebGLRenderer({
-        antialias:true
-    });
-
-renderer.setSize(
-    window.innerWidth,
-    window.innerHeight
-);
-
-renderer.setPixelRatio(
-    window.devicePixelRatio
-);
-
-document.body.appendChild(
-    renderer.domElement
-);
-
-// =====================================================
-// controls
-// =====================================================
-
-const controls =
-    new OrbitControls(
-        camera,
-        renderer.domElement
-    );
-
-controls.enableDamping = true;
-
-// =====================================================
-// light
-// =====================================================
-
-scene.add(
-    new THREE.AmbientLight(
-        0xffffff,
-        0.5
-    )
-);
-
-const light =
-    new THREE.PointLight(
-        0xffffff,
-        3
-    );
-
-light.position.set(0,500,0);
-
-scene.add(light);
-
-// =====================================================
-// gravity grid
-// =====================================================
-
-const gridGeometry =
-    new THREE.PlaneGeometry(
-        GRID_SIZE,
-        GRID_SIZE,
-        GRID_SEGMENTS,
-        GRID_SEGMENTS
-    );
-
-gridGeometry.rotateX(-Math.PI/2);
-
-const gridMaterial =
-    new THREE.MeshBasicMaterial({
-
-        color:0x44aaff,
-        wireframe:true
-
-    });
-
-const grid =
-    new THREE.Mesh(
-        gridGeometry,
-        gridMaterial
-    );
-
-scene.add(grid);
-
-// 保存用
-const originalPositions =
-    gridGeometry.attributes.position.array.slice();
-
-// =====================================================
-// objects
-// =====================================================
-
-const bodies = [];
-const trails = [];
-
-// =====================================================
-// wasm
-// =====================================================
-
-let simStep;
-let getCount;
-let getPositions;
-let getMasses;
-
-// =====================================================
-// start
-// =====================================================
-
-window.startApp = ()=>{
-
-    Module.ccall("init_simulation");
-
-    simStep =
-        Module.cwrap("step");
-
-    getCount =
-        Module.cwrap(
-            "get_count",
-            "number",
-            []
-        );
-
-    getPositions =
-        Module.cwrap(
-            "get_positions",
-            "number",
-            []
-        );
-
-    getMasses =
-        Module.cwrap(
-            "get_masses",
-            "number",
-            []
-        );
-
-    const count = getCount();
-
-    // =================================================
-    // create planets
-    // =================================================
-
-    for(let i=0;i<count;i++){
-
-        const mesh =
-            new THREE.Mesh(
-
-                new THREE.SphereGeometry(
-                    i===0 ? 60 : 16,
-                    32,
-                    32
-                ),
-
-                new THREE.MeshStandardMaterial({
-
-                    color:
-                        i===0
-                        ? 0xffcc00
-                        : 0x66aaff,
-
-                    emissive:
-                        i===0
-                        ? 0xffaa00
-                        : 0x000000,
-
-                    emissiveIntensity:
-                        i===0
-                        ? 3
-                        : 0
-
-                })
+        const camera =
+            new THREE.PerspectiveCamera(
+                60,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                100000
             );
 
-        scene.add(mesh);
+        camera.position.set(0, 600, 1800);
 
-        bodies.push(mesh);
+        // =====================================================
+        // renderer
+        // =====================================================
 
-        // =============================================
-        // trail
-        // =============================================
-
-        const positions =
-            new Float32Array(
-                TRAIL_LENGTH * 3
-            );
-
-        const geometry =
-            new THREE.BufferGeometry();
-
-        geometry.setAttribute(
-
-            "position",
-
-            new THREE.BufferAttribute(
-                positions,
-                3
-            )
-        );
-
-        geometry.setDrawRange(0,0);
-
-        const material =
-            new THREE.LineBasicMaterial({
-
-                color:0xffffff
-
+        const renderer =
+            new THREE.WebGLRenderer({
+                antialias: true
             });
-
-        const line =
-            new THREE.Line(
-                geometry,
-                material
-            );
-
-        scene.add(line);
-
-        trails.push({
-
-            positions,
-            geometry,
-            line,
-            count:0
-
-        });
-
-    }
-
-    animate();
-
-};
-
-// =====================================================
-// animate
-// =====================================================
-
-function animate(){
-
-    requestAnimationFrame(animate);
-
-    simStep();
-
-    const count = getCount();
-
-    const posPtr = getPositions();
-
-    const arr =
-        new Float64Array(
-            Module.HEAPF64.buffer,
-            posPtr,
-            count * 3
-        );
-
-    const massPtr = getMasses();
-
-    const masses =
-        new Float64Array(
-            Module.HEAPF64.buffer,
-            massPtr,
-            count
-        );
-
-    // =================================================
-    // bodies
-    // =================================================
-
-    for(let i=0;i<count;i++){
-
-        const x =
-            arr[i*3] * SPACE_SCALE;
-
-        const y =
-            arr[i*3+1] * SPACE_SCALE;
-
-        const z =
-            arr[i*3+2] * SPACE_SCALE;
-
-        bodies[i].position.set(x,y,z);
-
-        // =============================================
-        // trail update
-        // =============================================
-
-        const trail = trails[i];
-
-        if(trail.count < TRAIL_LENGTH){
-
-            trail.count++;
-
-        }
-
-        for(let j=0;j<trail.count-1;j++){
-
-            trail.positions[j*3] =
-                trail.positions[(j+1)*3];
-
-            trail.positions[j*3+1] =
-                trail.positions[(j+1)*3+1];
-
-            trail.positions[j*3+2] =
-                trail.positions[(j+1)*3+2];
-
-        }
-
-        const idx =
-            (trail.count-1)*3;
-
-        trail.positions[idx] = x;
-        trail.positions[idx+1] = y;
-        trail.positions[idx+2] = z;
-
-        trail.geometry.attributes
-            .position
-            .needsUpdate = true;
-
-        trail.geometry.setDrawRange(
-            0,
-            trail.count
-        );
-
-    }
-
-    // =================================================
-    // gravity grid
-    // =================================================
-
-    const pos =
-        gridGeometry.attributes.position;
-
-    for(let i=0;i<pos.count;i++){
-
-        const ox =
-            originalPositions[i*3];
-
-        const oz =
-            originalPositions[i*3+2];
-
-        let depth = 0;
-
-        for(let j=0;j<count;j++){
-
-            const bx =
-                arr[j*3] * SPACE_SCALE;
-
-            const bz =
-                arr[j*3+2] * SPACE_SCALE;
-
-            const dx = ox - bx;
-            const dz = oz - bz;
-
-            const dist =
-                Math.sqrt(
-                    dx*dx + dz*dz
-                ) + 30;
-
-            depth +=
-                8000 / dist;
-
-        }
-
-        pos.array[i*3+1] =
-            -depth;
-
-    }
-
-    pos.needsUpdate = true;
-
-    // =================================================
-    // render
-    // =================================================
-
-    controls.update();
-
-    renderer.render(
-        scene,
-        camera
-    );
-
-}
-
-// =====================================================
-// resize
-// =====================================================
-
-window.addEventListener(
-    "resize",
-    ()=>{
-
-        camera.aspect =
-            window.innerWidth /
-            window.innerHeight;
-
-        camera.updateProjectionMatrix();
 
         renderer.setSize(
             window.innerWidth,
             window.innerHeight
         );
 
-    }
-);
+        renderer.setPixelRatio(
+            window.devicePixelRatio
+        );
 
-</script>
+        document.body.appendChild(
+            renderer.domElement
+        );
+
+        // =====================================================
+        // controls
+        // =====================================================
+
+        const controls =
+            new OrbitControls(
+                camera,
+                renderer.domElement
+            );
+
+        controls.enableDamping = true;
+
+        // =====================================================
+        // light
+        // =====================================================
+
+        scene.add(
+            new THREE.AmbientLight(
+                0xffffff,
+                0.5
+            )
+        );
+
+        const light =
+            new THREE.PointLight(
+                0xffffff,
+                3
+            );
+
+        light.position.set(0, 500, 0);
+
+        scene.add(light);
+
+        // =====================================================
+        // gravity grid
+        // =====================================================
+
+        const gridGeometry =
+            new THREE.PlaneGeometry(
+                GRID_SIZE,
+                GRID_SIZE,
+                GRID_SEGMENTS,
+                GRID_SEGMENTS
+            );
+
+        gridGeometry.rotateX(-Math.PI / 2);
+
+        const gridMaterial =
+            new THREE.MeshBasicMaterial({
+
+                color: 0x44aaff,
+                wireframe: true
+
+            });
+
+        const grid =
+            new THREE.Mesh(
+                gridGeometry,
+                gridMaterial
+            );
+
+        scene.add(grid);
+
+        // 保存用
+        const originalPositions =
+            gridGeometry.attributes.position.array.slice();
+
+        // =====================================================
+        // objects
+        // =====================================================
+
+        const bodies = [];
+        const trails = [];
+
+        // =====================================================
+        // wasm
+        // =====================================================
+
+        let simStep;
+        let getCount;
+        let getPositions;
+        let getMasses;
+
+        // =====================================================
+        // start
+        // =====================================================
+
+        window.startApp = () => {
+
+            Module.ccall("init_simulation");
+
+            simStep =
+                Module.cwrap("step");
+
+            getCount =
+                Module.cwrap(
+                    "get_count",
+                    "number",
+                    []
+                );
+
+            getPositions =
+                Module.cwrap(
+                    "get_positions",
+                    "number",
+                    []
+                );
+
+            getMasses =
+                Module.cwrap(
+                    "get_masses",
+                    "number",
+                    []
+                );
+
+            const count = getCount();
+
+            // =================================================
+            // create planets
+            // =================================================
+
+            for (let i = 0; i < count; i++) {
+
+                const mesh =
+                    new THREE.Mesh(
+
+                        new THREE.SphereGeometry(
+                            sizes[i],
+                            32,
+                            32
+                        ),
+
+                        new THREE.MeshStandardMaterial({
+                            color: colors[i],
+
+                            emissive:
+                                i === 0
+                                    ? 0xffaa00
+                                    : 0x000000,
+
+                            emissiveIntensity:
+                                i === 0
+                                    ? 3
+                                    : 0
+
+                        })
+                    );
+
+                scene.add(mesh);
+
+                bodies.push(mesh);
+
+                // =============================================
+                // trail
+                // =============================================
+
+                const positions =
+                    new Float32Array(
+                        TRAIL_LENGTH * 3
+                    );
+
+                const geometry =
+                    new THREE.BufferGeometry();
+
+                geometry.setAttribute(
+
+                    "position",
+
+                    new THREE.BufferAttribute(
+                        positions,
+                        3
+                    )
+                );
+
+                geometry.setDrawRange(0, 0);
+
+                const material =
+                    new THREE.LineBasicMaterial({
+
+                        color: 0xffffff
+
+                    });
+
+                const line =
+                    new THREE.Line(
+                        geometry,
+                        material
+                    );
+
+                scene.add(line);
+
+                trails.push({
+
+                    positions,
+                    geometry,
+                    line,
+                    count: 0
+
+                });
+
+            }
+
+            animate();
+
+        };
+
+        // =====================================================
+        // animate
+        // =====================================================
+
+        function animate() {
+
+            requestAnimationFrame(animate);
+            if (!getMasses) return;
+            simStep();
+
+            const count = getCount();
+
+            const posPtr = getPositions();
+
+            const arr =
+                Module.HEAPF64.subarray(
+                    posPtr / 8,
+                    posPtr / 8 + count * 3
+                );
+            console.log("test")
+
+            console.log(arr.slice(0, 30));
+
+            const massPtr = getMasses();
+
+            const masses =
+                Module.HEAPF64.subarray(
+                    massPtr / 8,
+                    massPtr / 8 + count
+                );
+
+            // =================================================
+            // bodies
+            // =================================================
+
+            for (let i = 0; i < count; i++) {
+
+                const x =
+                    arr[i * 3] * SPACE_SCALE;
+
+                const y =
+                    arr[i * 3 + 1] * SPACE_SCALE;
+
+                const z =
+                    arr[i * 3 + 2] * SPACE_SCALE;
+
+                bodies[i].position.set(x, y, z);
+
+                // =============================================
+                // trail update
+                // =============================================
+
+                const trail = trails[i];
+
+                if (trail.count < TRAIL_LENGTH) {
+
+                    trail.count++;
+
+                }
+
+                for (let j = 0; j < trail.count - 1; j++) {
+
+                    trail.positions[j * 3] =
+                        trail.positions[(j + 1) * 3];
+
+                    trail.positions[j * 3 + 1] =
+                        trail.positions[(j + 1) * 3 + 1];
+
+                    trail.positions[j * 3 + 2] =
+                        trail.positions[(j + 1) * 3 + 2];
+
+                }
+
+                const idx =
+                    (trail.count - 1) * 3;
+
+                trail.positions[idx] = x;
+                trail.positions[idx + 1] = y;
+                trail.positions[idx + 2] = z;
+
+                trail.geometry.attributes
+                    .position
+                    .needsUpdate = true;
+
+                trail.geometry.setDrawRange(
+                    0,
+                    trail.count
+                );
+
+            }
+
+            // =================================================
+            // gravity grid
+            // =================================================
+
+            const pos =
+                gridGeometry.attributes.position;
+
+            for (let i = 0; i < pos.count; i++) {
+
+                const ox =
+                    originalPositions[i * 3];
+
+                const oz =
+                    originalPositions[i * 3 + 2];
+
+                let depth = 0;
+
+                for (let j = 0; j < count; j++) {
+
+                    const bx =
+                        arr[j * 3] * SPACE_SCALE;
+
+                    const bz =
+                        arr[j * 3 + 2] * SPACE_SCALE;
+
+                    const dx = ox - bx;
+                    const dz = oz - bz;
+
+                    const dist =
+                        Math.sqrt(
+                            dx * dx + dz * dz
+                        ) + 30;
+
+                    depth +=
+                        8000 / dist;
+
+                }
+
+                pos.array[i * 3 + 1] =
+                    -depth;
+
+            }
+
+            pos.needsUpdate = true;
+
+            // =================================================
+            // render
+            // =================================================
+
+            controls.update();
+
+            renderer.render(
+                scene,
+                camera
+            );
+
+        }
+
+        // =====================================================
+        // resize
+        // =====================================================
+
+        window.addEventListener(
+            "resize",
+            () => {
+
+                camera.aspect =
+                    window.innerWidth /
+                    window.innerHeight;
+
+                camera.updateProjectionMatrix();
+
+                renderer.setSize(
+                    window.innerWidth,
+                    window.innerHeight
+                );
+
+            }
+        );
+
+    </script>
 
 </body>
+
 </html>
 ```
