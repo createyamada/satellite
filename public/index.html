@@ -358,6 +358,8 @@
 
         function animate() {
 
+
+
             requestAnimationFrame(animate);
             if (!getMasses) return;
             simStep();
@@ -371,9 +373,16 @@
                     posPtr / 8,
                     posPtr / 8 + count * 3
                 );
-            console.log("test")
+            // console.log("test")
 
-            console.log(arr.slice(0, 30));
+            // console.log(arr.slice(0, 30));
+
+            console.log(
+                "Earth",
+                arr[9],
+                arr[10],
+                arr[11]
+            );
 
             const massPtr = getMasses();
 

@@ -34,8 +34,8 @@ void add_planet(
     b.z = 0;
 
     b.vx = 0;
-    b.vy = velocity;
-    b.vz = 0;
+    b.vy = 0;
+    b.vz = velocity;
 
     b.mass = mass;
 
